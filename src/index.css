@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: #f8fafc; color: #0f172a; transition: background-color 180ms ease, color 180ms ease; }
+html.dark body { background: #020617; color: #e2e8f0; }
+button { cursor: pointer; }
