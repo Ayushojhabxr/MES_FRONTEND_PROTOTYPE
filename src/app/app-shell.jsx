@@ -10,6 +10,7 @@ import { Sidebar } from '../components/layout/sidebar'
 import { KpiCards } from '../components/cards/kpi-cards'
 import { ModulePage } from '../components/ui/module-page'
 import { LoginPage } from '../pages/auth/login-page'
+import { CeoDashboardPage } from '../pages/dashboard/ceo-dashboard-page'
 
 const AuthContext = createContext(null)
 const authKey = 'aasa_role'
@@ -82,6 +83,8 @@ function ProtectedLayout() {
 
 function DashboardPage() {
   const { role } = useAuth()
+  if (role === ROLES.CEO) return <CeoDashboardPage />
+
   const kpis = dashboardData[role]?.kpis || dashboardData.default.kpis
   const shortcuts = (sidebarConfig[role] || []).filter((item) => !item.path.startsWith('/dashboard/')).slice(0, 4)
   return (

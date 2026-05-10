@@ -11,6 +11,8 @@ export const sidebarConfig = {
     { label: 'Item Master', path: '/masters/items', icon: Boxes },
     { label: 'Warehouse / Location', path: '/masters/warehouses', icon: Package },
     { label: 'Machine / Work Center', path: '/masters/machines', icon: Factory },
+    { label: 'BOM / Recipe', path: '/production/bom', icon: Boxes },
+    { label: 'BOM Approvals', path: '/production/bom-approvals', icon: ClipboardCheck },
     { label: 'System Settings', path: '/masters/settings', icon: Settings },
     { label: 'Audit Logs', path: '/reports/audit-logs', icon: FileText },
   ],
@@ -21,9 +23,6 @@ export const sidebarConfig = {
     { label: 'Inventory Overview', path: '/inventory/overview', icon: Package },
     { label: 'QC & Rejection Report', path: '/qc/reports', icon: ClipboardCheck },
     { label: 'Dispatch Overview', path: '/dispatch/overview', icon: Truck },
-    { label: 'Revenue / Billing', path: '/billing/overview', icon: Wallet },
-    { label: 'Costing & Profitability', path: '/reports/costing', icon: BarChart3 },
-    { label: 'Approvals', path: '/reports/approvals', icon: AlertCircle },
   ],
   [ROLES.SALES]: [
     { label: 'Sales Dashboard', path: '/dashboard/sales', icon: BarChart3 },

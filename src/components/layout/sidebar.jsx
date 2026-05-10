@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 export function Sidebar({ items, collapsed, userName, role }) {
   const { pathname } = useLocation()
   return (
-    <aside className={`${collapsed ? 'w-20' : 'w-72'} hidden shrink-0 self-stretch border-r border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 md:flex md:min-h-screen md:flex-col`}>
+    <aside className={`${collapsed ? 'w-20' : 'w-72'} sticky top-0 hidden h-screen shrink-0 self-start border-r border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 md:flex md:flex-col`}>
       <div className={`mb-5 rounded-xl border border-slate-200 bg-gradient-to-br from-sky-50 to-indigo-50 dark:border-slate-700 dark:from-slate-800 dark:to-slate-900 ${collapsed ? 'p-2' : 'p-3'}`}>
         <div className="flex items-center gap-2">
           <div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-sky-600 to-indigo-700 text-xs font-bold text-white">AA</div>
@@ -15,7 +15,7 @@ export function Sidebar({ items, collapsed, userName, role }) {
           )}
         </div>
       </div>
-      <nav className="mt-2 flex-1 space-y-1 overflow-y-auto">
+      <nav className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto">
         {items.map((item) => {
           const Icon = item.icon
           const active = pathname === item.path
