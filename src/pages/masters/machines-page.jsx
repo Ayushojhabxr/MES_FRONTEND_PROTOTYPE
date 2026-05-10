@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Activity, Factory, Gauge, Plus, Search, Users, Wrench } from 'lucide-react'
 import { StatusBadge } from '../../components/badges/status-badge'
 
@@ -192,15 +192,22 @@ const initialMachines = [
   },
 ]
 
-const maintenanceHistory = [
+const initialMaintenanceHistory = [
   {
     id: 'MNT-9001',
     machineCode: 'MIX-RAW-01',
     machineName: 'Raw Material Mixer',
+    maintenanceType: 'Breakdown',
+    priority: 'High',
     startDate: '2026-05-03',
     endDate: '2026-05-05',
+    nextDueDate: '2026-05-15',
     reason: 'Bearing noise and abnormal vibration during batch mixing.',
     actionTaken: 'Replaced bearing set, realigned shaft, tested motor load.',
+    partsUsed: 'Bearing set, shaft coupling',
+    downtimeHours: 16,
+    requestedBy: 'Production Supervisor',
+    assignedTechnician: 'Maintenance Team A',
     cost: 18500,
     status: 'Completed',
   },
@@ -208,10 +215,17 @@ const maintenanceHistory = [
     id: 'MNT-9002',
     machineCode: 'IM-450T-01',
     machineName: 'Injection Moulding 450T',
+    maintenanceType: 'Preventive',
+    priority: 'Medium',
     startDate: '2026-04-18',
     endDate: '2026-04-18',
+    nextDueDate: '2026-05-16',
     reason: 'Preventive maintenance as per 30-day schedule.',
     actionTaken: 'Hydraulic oil check, clamp calibration, nozzle cleaning.',
+    partsUsed: 'Hydraulic oil, nozzle cleaner',
+    downtimeHours: 4,
+    requestedBy: 'Maintenance Planner',
+    assignedTechnician: 'Maintenance Team B',
     cost: 9200,
     status: 'Completed',
   },
@@ -219,10 +233,17 @@ const maintenanceHistory = [
     id: 'MNT-9003',
     machineCode: 'PKG-LINE-02',
     machineName: 'Automatic Packing Line 2',
+    maintenanceType: 'Corrective',
+    priority: 'Medium',
     startDate: '2026-04-12',
     endDate: '2026-04-13',
+    nextDueDate: '2026-05-26',
     reason: 'Label applicator misalignment and sensor delay.',
     actionTaken: 'Sensor replacement, label head calibration, trial run approval.',
+    partsUsed: 'Photo sensor, label guide',
+    downtimeHours: 6,
+    requestedBy: 'Packing Supervisor',
+    assignedTechnician: 'Maintenance Team A',
     cost: 12800,
     status: 'Completed',
   },
@@ -252,7 +273,38 @@ const shiftTimes = Array.from({ length: 48 }, (_, index) => {
   return `${hours}:${minutes}`
 })
 
-function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
+function ImagePicker({ label, value, onChange }) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{label}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Upload a clear machine photo for later use in listings and detail views.</p>
+        </div>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (!file) return
+            const reader = new FileReader()
+            reader.onload = () => onChange(String(reader.result || ''))
+            reader.readAsDataURL(file)
+          }}
+          className="text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white dark:text-slate-300 dark:file:bg-sky-600"
+        />
+      </div>
+      {value && (
+        <div className="mt-3 flex items-center gap-3">
+          <img src={value} alt="Machine preview" className="h-20 w-20 rounded-md border border-slate-200 object-cover dark:border-slate-700" />
+          <button type="button" onClick={() => onChange('')} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:text-slate-100">Remove Image</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CreateLabourModal({ open, item, machines, labours, onClose, onCreate }) {
   if (!open) return null
 
   const fieldClass = 'rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
@@ -294,6 +346,25 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
             todayStatus: 'Idle',
             assignedProduct: 'Not assigned',
             assignedBom: 'Not assigned',
+            ...item,
+            code: fd.get('code'),
+            name: fd.get('name'),
+            position: fd.get('designation'),
+            designation: fd.get('designation'),
+            workType: fd.get('workType'),
+            department: fd.get('department'),
+            shift: fd.get('shift'),
+            shiftStart: fd.get('shiftStart'),
+            shiftEnd: fd.get('shiftEnd'),
+            availableDays: fd.getAll('availableDays').join(', '),
+            availability: fd.get('availability'),
+            costMode,
+            costRate,
+            costPerHour,
+            costPerMinute,
+            assignedMachine: fd.get('assignedMachine'),
+            skillLevel: fd.get('skillLevel'),
+            reportingManager: fd.get('reportingManager'),
             status: submitMode === 'draft' ? 'Draft' : fd.get('status'),
           })
         }}
@@ -301,7 +372,7 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Add Labour Resource</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{item ? 'Edit Labour Resource' : 'Add Labour Resource'}</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">Capture employee identity, 24-hour shift timing, skills, assignment, approval manager, and labour cost.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:text-slate-100">Cancel</button>
@@ -314,15 +385,15 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
             <div className="grid gap-3 md:grid-cols-3">
               <label className="min-w-0">
                 <span className={labelClass}>Employee / Labour Code</span>
-                <input name="code" required placeholder="Example: LAB-005" className={`${fieldClass} w-full`} />
+                <input name="code" required defaultValue={item?.code || ''} placeholder="Example: LAB-005" className={`${fieldClass} w-full`} />
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Employee Name</span>
-                <input name="name" required placeholder="Full name" className={`${fieldClass} w-full`} />
+                <input name="name" required defaultValue={item?.name || ''} placeholder="Full name" className={`${fieldClass} w-full`} />
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Department</span>
-                <select name="department" className={`${fieldClass} w-full`}>
+                <select name="department" defaultValue={item?.department || 'Production'} className={`${fieldClass} w-full`}>
                   <option>Production</option>
                   <option>QC</option>
                   <option>Packing</option>
@@ -332,7 +403,7 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Designation</span>
-                <select name="designation" className={`${fieldClass} w-full`}>
+                <select name="designation" defaultValue={item?.designation || item?.position || 'Operator'} className={`${fieldClass} w-full`}>
                   <option>Operator</option>
                   <option>Supervisor</option>
                   <option>Manager</option>
@@ -343,14 +414,14 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Reporting Manager</span>
-                <select name="reportingManager" className={`${fieldClass} w-full`}>
+                <select name="reportingManager" defaultValue={item?.reportingManager || 'Not assigned'} className={`${fieldClass} w-full`}>
                   <option>Not assigned</option>
                   {labours.map((labour) => <option key={labour.code}>{labour.name}</option>)}
                 </select>
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Employee Status</span>
-                <select name="status" defaultValue="Active" className={`${fieldClass} w-full`}>
+                <select name="status" defaultValue={item?.status || 'Active'} className={`${fieldClass} w-full`}>
                   <option>Active</option>
                   <option>Inactive</option>
                 </select>
@@ -364,7 +435,7 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
             <div className="grid gap-3 md:grid-cols-3">
               <label className="min-w-0">
                 <span className={labelClass}>Shift Type</span>
-                <select name="shift" className={`${fieldClass} w-full`}>
+                <select name="shift" defaultValue={item?.shift || 'Morning'} className={`${fieldClass} w-full`}>
                   <option>Morning</option>
                   <option>Evening</option>
                   <option>Night</option>
@@ -373,19 +444,19 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Shift Start</span>
-                <select name="shiftStart" defaultValue="09:00" className={`${fieldClass} w-full`}>
+                <select name="shiftStart" defaultValue={item?.shiftStart || '09:00'} className={`${fieldClass} w-full`}>
                   {shiftTimes.map((time) => <option key={`start-${time}`}>{time}</option>)}
                 </select>
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Shift End</span>
-                <select name="shiftEnd" defaultValue="18:00" className={`${fieldClass} w-full`}>
+                <select name="shiftEnd" defaultValue={item?.shiftEnd || '18:00'} className={`${fieldClass} w-full`}>
                   {shiftTimes.map((time) => <option key={`end-${time}`}>{time}</option>)}
                 </select>
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Availability</span>
-                <select name="availability" className={`${fieldClass} w-full`}>
+                <select name="availability" defaultValue={item?.availability || 'Available'} className={`${fieldClass} w-full`}>
                   <option>Available</option>
                   <option>On Shift</option>
                   <option>Not Available</option>
@@ -396,7 +467,7 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
                 <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-7">
                   {weekDays.map((day) => (
                     <label key={day} className="flex items-center justify-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">
-                      <input name="availableDays" type="checkbox" value={day} defaultChecked={day !== 'Sun'} className="h-4 w-4 rounded border-slate-300" />
+                      <input name="availableDays" type="checkbox" value={day} defaultChecked={item?.availableDays ? item.availableDays.includes(day) : day !== 'Sun'} className="h-4 w-4 rounded border-slate-300" />
                       {day}
                     </label>
                   ))}
@@ -411,7 +482,8 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
             <div className="grid gap-3 md:grid-cols-3">
               <label className="min-w-0">
                 <span className={labelClass}>Skill Type</span>
-                <select name="workType" className={`${fieldClass} w-full`}>
+                <select name="workType" defaultValue={item?.workType || 'Machine Operator'} className={`${fieldClass} w-full`}>
+                  {item?.workType && !['Machine Operator', 'QC Inspector', 'Packaging', 'Manual Work', 'Material Handling', 'Maintenance Support'].includes(item.workType) && <option>{item.workType}</option>}
                   <option>Machine Operator</option>
                   <option>QC Inspector</option>
                   <option>Packaging</option>
@@ -422,7 +494,7 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Skill Level</span>
-                <select name="skillLevel" className={`${fieldClass} w-full`}>
+                <select name="skillLevel" defaultValue={item?.skillLevel || 'Skilled'} className={`${fieldClass} w-full`}>
                   <option>Helper</option>
                   <option>Skilled</option>
                   <option>Senior</option>
@@ -431,7 +503,7 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Assigned Machine / Work</span>
-                <select name="assignedMachine" className={`${fieldClass} w-full`}>
+                <select name="assignedMachine" defaultValue={item?.assignedMachine || 'Manual Work'} className={`${fieldClass} w-full`}>
                   <option>Manual Work</option>
                   <option>Not assigned</option>
                   {machines.map((machine) => <option key={machine.code}>{machine.code}</option>)}
@@ -440,8 +512,8 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
               <label className="min-w-0">
                 <span className={labelClass}>Labour Cost Rate</span>
                 <div className={pairedClass}>
-                  <input name="costRate" type="number" min="0" step="0.01" required placeholder="180" className={`${fieldClass} min-w-0 w-full`} />
-                  <select name="costMode" className={`${fieldClass} min-w-0 w-full px-2`}>
+                  <input name="costRate" type="number" min="0" step="0.01" required defaultValue={item?.costRate || item?.costPerHour || ''} placeholder="180" className={`${fieldClass} min-w-0 w-full`} />
+                  <select name="costMode" defaultValue={item?.costMode || 'Per Hour'} className={`${fieldClass} min-w-0 w-full px-2`}>
                     <option>Per Hour</option>
                     <option>Per Minute</option>
                   </select>
@@ -452,10 +524,10 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
         </div>
 
         <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <button name="submitMode" value="draft" className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+          {!item && <button name="submitMode" value="draft" className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
             <Plus size={16} />
             Save Labour Draft
-          </button>
+          </button>}
           <button name="submitMode" value="save" className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white dark:bg-sky-600">
             <Plus size={16} />
             Save Resource
@@ -466,7 +538,13 @@ function CreateLabourModal({ open, machines, labours, onClose, onCreate }) {
   )
 }
 
-function CreateMachineModal({ open, labours, onClose, onCreate }) {
+function CreateMachineModal({ open, item, labours, onClose, onCreate }) {
+  const [imageData, setImageData] = useState(item?.image || '')
+
+  useEffect(() => {
+    if (open) setImageData(item?.image || '')
+  }, [open, item])
+
   if (!open) return null
 
   const fieldClass = 'rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
@@ -489,6 +567,8 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
           const powerUnit = fd.get('powerUnit')
           onCreate({
             resourceType: 'Machine',
+            ...item,
+            image: imageData,
             code: fd.get('code'),
             name: fd.get('name'),
             type: fd.get('type'),
@@ -512,16 +592,16 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
             currentStatus: submitMode === 'draft' ? 'Draft' : fd.get('currentStatus'),
             health: fd.get('health'),
             efficiency: Number(fd.get('efficiency') || 0),
-            todayStatus: 'Idle',
-            assignedProduct: 'Not assigned',
-            assignedBom: 'Not assigned',
+            todayStatus: item?.todayStatus || 'Idle',
+            assignedProduct: item?.assignedProduct || 'Not assigned',
+            assignedBom: item?.assignedBom || 'Not assigned',
           })
         }}
         className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Add Machine Resource</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{item ? 'Edit Machine Resource' : 'Add Machine Resource'}</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">Save as draft first. Capacity, power, and cost fields are grouped with their units.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:text-slate-100">Cancel</button>
@@ -534,15 +614,15 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
             <div className="grid gap-3 md:grid-cols-3">
               <label className="min-w-0">
                 <span className={labelClass}>Machine Code</span>
-                <input name="code" required placeholder="Example: IM-450T-02" className={`${fieldClass} w-full`} />
+                <input name="code" required defaultValue={item?.code || ''} placeholder="Example: IM-450T-02" className={`${fieldClass} w-full`} />
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Machine Name</span>
-                <input name="name" required placeholder="Injection Moulding 450T" className={`${fieldClass} w-full`} />
+                <input name="name" required defaultValue={item?.name || ''} placeholder="Injection Moulding 450T" className={`${fieldClass} w-full`} />
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Machine Type</span>
-                <select name="type" className={`${fieldClass} w-full`}>
+                <select name="type" defaultValue={item?.type || 'Injection'} className={`${fieldClass} w-full`}>
                   <option>Injection</option>
                   <option>UV</option>
                   <option>Packing</option>
@@ -552,7 +632,7 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Department</span>
-                <select name="department" className={`${fieldClass} w-full`}>
+                <select name="department" defaultValue={item?.department || 'Production'} className={`${fieldClass} w-full`}>
                   <option>Production</option>
                   <option>QC</option>
                   <option>Packing</option>
@@ -561,7 +641,7 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Work Center</span>
-                <select name="workCenter" className={`${fieldClass} w-full`}>
+                <select name="workCenter" defaultValue={item?.workCenter || 'Moulding Bay'} className={`${fieldClass} w-full`}>
                   <option>Moulding Bay</option>
                   <option>UV Section</option>
                   <option>Packing Section</option>
@@ -571,7 +651,7 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Default Operator</span>
-                <select name="defaultOperator" className={`${fieldClass} w-full`}>
+                <select name="defaultOperator" defaultValue={item?.defaultOperator || 'Not assigned'} className={`${fieldClass} w-full`}>
                   <option>Not assigned</option>
                   {labours.map((labour) => <option key={labour.code}>{labour.name}</option>)}
                 </select>
@@ -586,8 +666,8 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               <label className="min-w-0">
                 <span className={labelClass}>Hourly Capacity</span>
                 <div className={pairedClass}>
-                  <input name="capacityPerHour" type="number" min="0" required placeholder="120" className={`${fieldClass} min-w-0 w-full`} />
-                  <select name="capacityPerHourUnit" className={`${fieldClass} min-w-0 w-full px-2`}>
+                  <input name="capacityPerHour" type="number" min="0" required defaultValue={item?.capacityPerHour || ''} placeholder="120" className={`${fieldClass} min-w-0 w-full`} />
+                  <select name="capacityPerHourUnit" defaultValue={item?.capacityPerHourUnit || 'pcs/hr'} className={`${fieldClass} min-w-0 w-full px-2`}>
                     <option>pcs/hr</option>
                     <option>kg/hr</option>
                     <option>batches/hr</option>
@@ -598,8 +678,8 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               <label className="min-w-0">
                 <span className={labelClass}>Daily Capacity</span>
                 <div className={pairedClass}>
-                  <input name="capacityPerDay" type="number" min="0" required placeholder="2400" className={`${fieldClass} min-w-0 w-full`} />
-                  <select name="capacityPerDayUnit" className={`${fieldClass} min-w-0 w-full px-2`}>
+                  <input name="capacityPerDay" type="number" min="0" required defaultValue={item?.capacityPerDay || ''} placeholder="2400" className={`${fieldClass} min-w-0 w-full`} />
+                  <select name="capacityPerDayUnit" defaultValue={item?.capacityPerDayUnit || 'pcs/day'} className={`${fieldClass} min-w-0 w-full px-2`}>
                     <option>pcs/day</option>
                     <option>kg/day</option>
                     <option>batches/day</option>
@@ -610,8 +690,8 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               <label className="min-w-0">
                 <span className={labelClass}>Power Consumption</span>
                 <div className={pairedClass}>
-                  <input name="powerValue" type="number" min="0" step="0.01" required placeholder="38" className={`${fieldClass} min-w-0 w-full`} />
-                  <select name="powerUnit" className={`${fieldClass} min-w-0 w-full px-2`}>
+                  <input name="powerValue" type="number" min="0" step="0.01" required defaultValue={item?.powerValue || Number.parseFloat(item?.powerConsumption) || ''} placeholder="38" className={`${fieldClass} min-w-0 w-full`} />
+                  <select name="powerUnit" defaultValue={item?.powerUnit || 'kWh/hr'} className={`${fieldClass} min-w-0 w-full px-2`}>
                     <option>kWh/hr</option>
                     <option>kW</option>
                     <option>HP</option>
@@ -628,8 +708,8 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               <label className="min-w-0">
                 <span className={labelClass}>Machine Cost Rate</span>
                 <div className={pairedClass}>
-                  <input name="costRate" type="number" min="0" step="0.01" required placeholder="1250" className={`${fieldClass} min-w-0 w-full`} />
-                  <select name="costUnit" className={`${fieldClass} min-w-0 w-full px-2`}>
+                  <input name="costRate" type="number" min="0" step="0.01" required defaultValue={item?.costRate || item?.costPerHour || ''} placeholder="1250" className={`${fieldClass} min-w-0 w-full`} />
+                  <select name="costUnit" defaultValue={item?.costUnit || 'Per Hour'} className={`${fieldClass} min-w-0 w-full px-2`}>
                     <option>Per Hour</option>
                     <option>Per Minute</option>
                   </select>
@@ -637,7 +717,7 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Current Status</span>
-                <select name="currentStatus" defaultValue="Available" className={`${fieldClass} w-full`}>
+                <select name="currentStatus" defaultValue={item?.currentStatus || 'Available'} className={`${fieldClass} w-full`}>
                   <option>Available</option>
                   <option>Running</option>
                   <option>Idle</option>
@@ -648,7 +728,7 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Machine Health</span>
-                <select name="health" className={`${fieldClass} w-full`}>
+                <select name="health" defaultValue={item?.health || 'Good'} className={`${fieldClass} w-full`}>
                   <option>Excellent</option>
                   <option>Good</option>
                   <option>Needs Service</option>
@@ -657,11 +737,11 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Efficiency %</span>
-                <input name="efficiency" type="number" min="0" max="100" required placeholder="91" className={`${fieldClass} w-full`} />
+                <input name="efficiency" type="number" min="0" max="100" required defaultValue={item?.efficiency || ''} placeholder="91" className={`${fieldClass} w-full`} />
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Maintenance Schedule</span>
-                <select name="maintenanceSchedule" className={`${fieldClass} w-full`}>
+                <select name="maintenanceSchedule" defaultValue={item?.maintenanceSchedule || 'Every 30 days'} className={`${fieldClass} w-full`}>
                   <option>Every 15 days</option>
                   <option>Every 21 days</option>
                   <option>Every 30 days</option>
@@ -671,7 +751,7 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
               </label>
               <label className="min-w-0">
                 <span className={labelClass}>Allowed Products</span>
-                <input name="allowedProducts" required placeholder="Cap mould, plastic housing" className={`${fieldClass} w-full`} />
+                <input name="allowedProducts" required defaultValue={item?.allowedProducts || ''} placeholder="Cap mould, plastic housing" className={`${fieldClass} w-full`} />
               </label>
             </div>
           </div>
@@ -679,20 +759,107 @@ function CreateMachineModal({ open, labours, onClose, onCreate }) {
           <div className={sectionClass}>
             <label>
               <span className={labelClass}>Machine Description</span>
-              <textarea name="description" required placeholder="Describe where this machine is used, what it can manufacture, and any operating constraints." className={`${fieldClass} min-h-24 w-full`} />
+              <textarea name="description" required defaultValue={item?.description || ''} placeholder="Describe where this machine is used, what it can manufacture, and any operating constraints." className={`${fieldClass} min-h-24 w-full`} />
             </label>
           </div>
+
+          <ImagePicker label="Machine Image" value={imageData} onChange={setImageData} />
         </div>
 
         <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <button name="submitMode" value="draft" className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+          {!item && <button name="submitMode" value="draft" className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
             <Plus size={16} />
             Save Machine Draft
-          </button>
+          </button>}
           <button name="submitMode" value="save" className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white dark:bg-sky-600">
             <Plus size={16} />
             Save Resource
           </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function CreateMaintenanceModal({ open, machines, onClose, onCreate }) {
+  if (!open) return null
+
+  const fieldClass = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+  const labelClass = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400'
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          const fd = new FormData(event.currentTarget)
+          const machine = machines.find((item) => item.code === fd.get('machineCode'))
+          onCreate({
+            id: fd.get('id'),
+            machineCode: fd.get('machineCode'),
+            machineName: machine?.name || '',
+            maintenanceType: fd.get('maintenanceType'),
+            priority: fd.get('priority'),
+            startDate: fd.get('startDate'),
+            endDate: fd.get('endDate'),
+            nextDueDate: fd.get('nextDueDate'),
+            reason: fd.get('reason'),
+            actionTaken: fd.get('actionTaken'),
+            partsUsed: fd.get('partsUsed'),
+            downtimeHours: Number(fd.get('downtimeHours') || 0),
+            requestedBy: fd.get('requestedBy'),
+            assignedTechnician: fd.get('assignedTechnician'),
+            cost: Number(fd.get('cost') || 0),
+            status: fd.get('status'),
+          })
+        }}
+        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+      >
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Add Machine Maintenance</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Record preventive, corrective, breakdown, and scheduled maintenance against a machine.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:text-slate-100">Cancel</button>
+        </div>
+
+        <div className="grid gap-4">
+          <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Maintenance Header</h4>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <label><span className={labelClass}>Maintenance ID</span><input name="id" required defaultValue={`MNT-${Date.now().toString().slice(-4)}`} className={fieldClass} /></label>
+              <label><span className={labelClass}>Machine</span><select name="machineCode" className={fieldClass}>{machines.map((machine) => <option key={machine.code}>{machine.code}</option>)}</select></label>
+              <label><span className={labelClass}>Maintenance Type</span><select name="maintenanceType" className={fieldClass}><option>Preventive</option><option>Corrective</option><option>Breakdown</option><option>Calibration</option><option>Inspection</option></select></label>
+              <label><span className={labelClass}>Priority</span><select name="priority" className={fieldClass}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label>
+              <label><span className={labelClass}>Status</span><select name="status" className={fieldClass}><option>Scheduled</option><option>Under Maintenance</option><option>Completed</option><option>Cancelled</option></select></label>
+              <label><span className={labelClass}>Cost</span><input name="cost" type="number" min="0" step="0.01" defaultValue="0" className={fieldClass} /></label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Schedule & Ownership</h4>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <label><span className={labelClass}>Start Date</span><input name="startDate" type="date" required className={fieldClass} /></label>
+              <label><span className={labelClass}>End Date</span><input name="endDate" type="date" required className={fieldClass} /></label>
+              <label><span className={labelClass}>Next Due Date</span><input name="nextDueDate" type="date" required className={fieldClass} /></label>
+              <label><span className={labelClass}>Downtime Hours</span><input name="downtimeHours" type="number" min="0" step="0.5" defaultValue="0" className={fieldClass} /></label>
+              <label><span className={labelClass}>Requested By</span><input name="requestedBy" placeholder="Production / QC / Planner" className={fieldClass} /></label>
+              <label><span className={labelClass}>Assigned Technician</span><input name="assignedTechnician" placeholder="Technician or team" className={fieldClass} /></label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Work Details</h4>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label><span className={labelClass}>Reason</span><textarea name="reason" required placeholder="Why was this machine taken for maintenance?" className={`${fieldClass} min-h-24`} /></label>
+              <label><span className={labelClass}>Action Taken / Plan</span><textarea name="actionTaken" required placeholder="What was done or planned?" className={`${fieldClass} min-h-24`} /></label>
+              <label className="md:col-span-2"><span className={labelClass}>Parts / Consumables Used</span><input name="partsUsed" placeholder="Bearing, oil, sensor, belt, etc." className={fieldClass} /></label>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <button className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white dark:bg-sky-600">Save Maintenance</button>
         </div>
       </form>
     </div>
@@ -739,6 +906,10 @@ const resourceFields = {
 
 function ResourceDetailModal({ open, mode, resourceType, record, onClose, onModeChange, onSave }) {
   const [draft, setDraft] = useState(record || {})
+
+  useEffect(() => {
+    if (open) setDraft(record || {})
+  }, [open, record])
 
   if (!open || !record) return null
 
@@ -813,6 +984,12 @@ export default function MachinesPage() {
   const [machines, setMachines] = useState(initialMachines)
   const [createLabourOpen, setCreateLabourOpen] = useState(false)
   const [createMachineOpen, setCreateMachineOpen] = useState(false)
+  const [createMaintenanceOpen, setCreateMaintenanceOpen] = useState(false)
+  const [maintenanceRecords, setMaintenanceRecords] = useState(initialMaintenanceHistory)
+  const [selectedMaintenanceMachine, setSelectedMaintenanceMachine] = useState('')
+  const [maintenanceMachineQuery, setMaintenanceMachineQuery] = useState('')
+  const [editingLabour, setEditingLabour] = useState(null)
+  const [editingMachine, setEditingMachine] = useState(null)
   const [selectedResource, setSelectedResource] = useState(null)
   const [resourceModalMode, setResourceModalMode] = useState('view')
 
@@ -827,62 +1004,82 @@ export default function MachinesPage() {
   )
 
   const filteredMaintenance = useMemo(
-    () => maintenanceHistory.filter((item) => JSON.stringify(item).toLowerCase().includes(query.toLowerCase())),
-    [query],
+    () => maintenanceRecords.filter((item) => {
+      const queryMatch = JSON.stringify(item).toLowerCase().includes(query.toLowerCase())
+      const machineMatch = !selectedMaintenanceMachine || item.machineCode === selectedMaintenanceMachine
+      return queryMatch && machineMatch
+    }),
+    [maintenanceRecords, query, selectedMaintenanceMachine],
+  )
+
+  const maintenanceMachines = useMemo(
+    () => machines.filter((machine) => JSON.stringify(machine).toLowerCase().includes(maintenanceMachineQuery.toLowerCase())),
+    [machines, maintenanceMachineQuery],
   )
 
   const machineCost = machines.reduce((sum, item) => sum + item.costPerHour, 0)
   const averageEfficiency = machines.length ? Math.round(machines.reduce((sum, item) => sum + item.efficiency, 0) / machines.length) : 0
+  const nextSevenDays = new Date('2026-05-17')
+  const today = new Date('2026-05-10')
+  const maintenanceOverview = {
+    underMaintenance: machines.filter((machine) => machine.currentStatus === 'Under Maintenance').length,
+    dueSoon: maintenanceRecords.filter((record) => {
+      if (!record.nextDueDate) return false
+      const date = new Date(record.nextDueDate)
+      return date >= today && date <= nextSevenDays
+    }).length,
+    scheduled: maintenanceRecords.filter((record) => record.status === 'Scheduled').length,
+    spend: maintenanceRecords.reduce((sum, record) => sum + Number(record.cost || 0), 0),
+  }
 
   return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-4 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 via-indigo-50 to-cyan-50 p-4 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 md:flex-row md:items-center md:justify-between">
+    <section className="space-y-3">
+      <div className="flex flex-col gap-3 rounded-xl border border-sky-100 bg-gradient-to-r from-sky-50 via-indigo-50 to-cyan-50 p-3 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-sm text-slate-600 dark:text-slate-300">Home / Resource Management</p>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Resources</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">Defines production capacity, labour availability, machine capability, runtime cost, and maintenance readiness.</p>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Resources</h1>
+          <p className="mt-0.5 max-w-3xl text-xs text-slate-600 dark:text-slate-300">Production capacity, labour availability, machine capability, runtime cost, and maintenance readiness.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => setCreateLabourOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-md bg-gradient-to-r from-sky-600 to-indigo-700 px-3 py-2 text-sm font-medium text-white">
+          <button onClick={() => { setEditingLabour(null); setCreateLabourOpen(true) }} className="inline-flex items-center justify-center gap-2 rounded-md bg-gradient-to-r from-sky-600 to-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
             <Plus size={16} />
             Add Labour Resource
           </button>
-          <button onClick={() => setCreateMachineOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+          <button onClick={() => { setEditingMachine(null); setCreateMachineOpen(true) }} className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
             <Plus size={16} />
             Add Machine Resource
           </button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><Users size={16} /> Labour Resources</div>
-          <p className="text-2xl font-semibold text-sky-700 dark:text-sky-300">{labours.length}</p>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300"><Users size={15} /> Labour Resources</div>
+          <p className="text-xl font-semibold text-sky-700 dark:text-sky-300">{labours.length}</p>
         </div>
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><Factory size={16} /> Machines</div>
-          <p className="text-2xl font-semibold text-indigo-700 dark:text-indigo-300">{machines.length}</p>
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300"><Factory size={15} /> Machines</div>
+          <p className="text-xl font-semibold text-indigo-700 dark:text-indigo-300">{machines.length}</p>
         </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><Gauge size={16} /> Avg Efficiency</div>
-          <p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{averageEfficiency}%</p>
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300"><Gauge size={15} /> Avg Efficiency</div>
+          <p className="text-xl font-semibold text-emerald-700 dark:text-emerald-300">{averageEfficiency}%</p>
         </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><Activity size={16} /> Machine Cost / Hr</div>
-          <p className="text-2xl font-semibold text-amber-700 dark:text-amber-300">INR {machineCost.toLocaleString()}</p>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300"><Activity size={15} /> Machine Cost / Hr</div>
+          <p className="text-xl font-semibold text-amber-700 dark:text-amber-300">INR {machineCost.toLocaleString()}</p>
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.5fr_0.85fr]">
-        <div className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+      <div className="space-y-3">
+          <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex flex-wrap gap-2">
                 {['Labour', 'Machines', 'Maintenance History'].map((view) => (
                   <button
                     key={view}
                     onClick={() => setActiveView(view)}
-                    className={`rounded-md px-3 py-2 text-sm font-medium ${activeView === view ? 'bg-slate-900 text-white dark:bg-sky-600' : 'border border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-200'}`}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium ${activeView === view ? 'bg-slate-900 text-white dark:bg-sky-600' : 'border border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-200'}`}
                   >
                     {view}
                   </button>
@@ -894,43 +1091,43 @@ export default function MachinesPage() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search resource code, name, status, shift, department..."
-                  className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  className="w-full rounded-md border border-slate-300 py-1.5 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 />
               </div>
             </div>
           </div>
 
           {activeView === 'Labour' && (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
               <table className="min-w-[1320px] text-left text-sm">
                 <thead className="bg-sky-50 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   <tr>
-                    <th className="px-4 py-3">Labour Code</th>
-                    <th className="px-4 py-3">Labour Name</th>
-                    <th className="px-4 py-3">Position / Work</th>
-                    <th className="px-4 py-3">Shift / Days</th>
-                    <th className="px-4 py-3">Cost</th>
-                    <th className="px-4 py-3">Machine / Work Area</th>
-                    <th className="px-4 py-3">Product / BOM</th>
-                    <th className="px-4 py-3">Availability / Status</th>
-                    <th className="px-4 py-3">Actions</th>
+                    <th className="px-3 py-2">Labour Code</th>
+                    <th className="px-3 py-2">Labour Name</th>
+                    <th className="px-3 py-2">Position / Work</th>
+                    <th className="px-3 py-2">Shift / Days</th>
+                    <th className="px-3 py-2">Cost</th>
+                    <th className="px-3 py-2">Machine / Work Area</th>
+                    <th className="px-3 py-2">Product / BOM</th>
+                    <th className="px-3 py-2">Availability / Status</th>
+                    <th className="px-3 py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredLabours.map((labour) => (
                     <tr key={labour.code} className="border-t border-slate-100 dark:border-slate-800 dark:text-slate-200">
-                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">{labour.code}</td>
-                      <td className="px-4 py-3">{labour.name}<p className="text-xs text-slate-500">{labour.skillLevel}</p></td>
-                      <td className="px-4 py-3">{labour.designation || labour.position}<p className="text-xs text-slate-500">{labour.workType}</p></td>
-                      <td className="px-4 py-3">{labour.shift}<p className="text-xs text-slate-500">{labour.shiftStart || '09:00'} to {labour.shiftEnd || '18:00'} / {labour.availableDays}</p></td>
-                      <td className="px-4 py-3">INR {labour.costRate || labour.costPerHour}/{labour.costMode === 'Per Minute' ? 'min' : 'hr'}<p className="text-xs text-slate-500">INR {Number(labour.costPerHour).toFixed(2)}/hr</p></td>
-                      <td className="px-4 py-3">{labour.assignedMachine}<p className="text-xs text-slate-500">Mgr: {labour.reportingManager || 'Not assigned'}</p></td>
-                      <td className="px-4 py-3">{labour.assignedProduct || 'Not assigned'}<p className="text-xs text-slate-500">{labour.assignedBom || 'Not assigned'}</p></td>
-                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><StatusBadge status={labour.todayStatus || 'Idle'} /><StatusBadge status={labour.availability} /><StatusBadge status={labour.status} /></div></td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2 font-semibold text-slate-900 dark:text-slate-100">{labour.code}</td>
+                      <td className="px-3 py-2">{labour.name}<p className="text-xs text-slate-500">{labour.skillLevel}</p></td>
+                      <td className="px-3 py-2">{labour.designation || labour.position}<p className="text-xs text-slate-500">{labour.workType}</p></td>
+                      <td className="px-3 py-2">{labour.shift}<p className="text-xs text-slate-500">{labour.shiftStart || '09:00'} to {labour.shiftEnd || '18:00'} / {labour.availableDays}</p></td>
+                      <td className="px-3 py-2">INR {labour.costRate || labour.costPerHour}/{labour.costMode === 'Per Minute' ? 'min' : 'hr'}<p className="text-xs text-slate-500">INR {Number(labour.costPerHour).toFixed(2)}/hr</p></td>
+                      <td className="px-3 py-2">{labour.assignedMachine}<p className="text-xs text-slate-500">Mgr: {labour.reportingManager || 'Not assigned'}</p></td>
+                      <td className="px-3 py-2">{labour.assignedProduct || 'Not assigned'}<p className="text-xs text-slate-500">{labour.assignedBom || 'Not assigned'}</p></td>
+                      <td className="px-3 py-2"><div className="flex flex-wrap gap-1"><StatusBadge status={labour.todayStatus || 'Idle'} /><StatusBadge status={labour.availability} /><StatusBadge status={labour.status} /></div></td>
+                      <td className="px-3 py-2">
                         <div className="flex gap-2">
                           <button onClick={() => { setSelectedResource({ type: 'Labour', record: labour }); setResourceModalMode('view') }} className="rounded bg-slate-900 px-2 py-1 text-xs text-white dark:bg-sky-600">View</button>
-                          <button onClick={() => { setSelectedResource({ type: 'Labour', record: labour }); setResourceModalMode('edit') }} className="rounded border px-2 py-1 text-xs dark:border-slate-600 dark:text-slate-100">Edit</button>
+                          <button onClick={() => { setEditingLabour(labour); setCreateLabourOpen(true) }} className="rounded border px-2 py-1 text-xs dark:border-slate-600 dark:text-slate-100">Edit</button>
                         </div>
                       </td>
                     </tr>
@@ -941,36 +1138,36 @@ export default function MachinesPage() {
           )}
 
           {activeView === 'Machines' && (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
               <table className="min-w-[1320px] text-left text-sm">
                 <thead className="bg-sky-50 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   <tr>
-                    <th className="px-4 py-3">Machine Code</th>
-                    <th className="px-4 py-3">Machine Details</th>
-                    <th className="px-4 py-3">Work Center</th>
-                    <th className="px-4 py-3">Capacity</th>
-                    <th className="px-4 py-3">Cost</th>
-                    <th className="px-4 py-3">Operator / Health</th>
-                    <th className="px-4 py-3">Product / BOM</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Actions</th>
+                    <th className="px-3 py-2">Machine Code</th>
+                    <th className="px-3 py-2">Machine Details</th>
+                    <th className="px-3 py-2">Work Center</th>
+                    <th className="px-3 py-2">Capacity</th>
+                    <th className="px-3 py-2">Cost</th>
+                    <th className="px-3 py-2">Operator / Health</th>
+                    <th className="px-3 py-2">Product / BOM</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredMachines.map((machine) => (
                     <tr key={machine.code} className="border-t border-slate-100 dark:border-slate-800 dark:text-slate-200">
-                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">{machine.code}</td>
-                      <td className="px-4 py-3">{machine.name}<p className="max-w-sm text-xs text-slate-500">{machine.description}</p></td>
-                      <td className="px-4 py-3">{machine.workCenter}<p className="text-xs text-slate-500">{machine.department} / {machine.type}</p></td>
-                      <td className="px-4 py-3">{machine.capacityPerHour} {machine.capacityPerHourUnit || 'pcs/hr'}<p className="text-xs text-slate-500">{machine.capacityPerDay} {machine.capacityPerDayUnit || 'pcs/day'}</p></td>
-                      <td className="px-4 py-3">INR {machine.costRate || machine.costPerHour}/{machine.costUnit === 'Per Minute' ? 'min' : 'hr'}<p className="text-xs text-slate-500">INR {Number(machine.costPerHour).toFixed(2)}/hr</p></td>
-                      <td className="px-4 py-3">{machine.defaultOperator}<p className="text-xs text-slate-500">{machine.health} / {machine.efficiency}% efficiency</p></td>
-                      <td className="px-4 py-3">{machine.assignedProduct || 'Not assigned'}<p className="text-xs text-slate-500">{machine.assignedBom || 'Not assigned'}</p></td>
-                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><StatusBadge status={machine.todayStatus || 'Idle'} /><StatusBadge status={machine.currentStatus} /></div></td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2 font-semibold text-slate-900 dark:text-slate-100">{machine.code}</td>
+                      <td className="px-3 py-2">{machine.name}<p className="max-w-sm text-xs text-slate-500">{machine.description}</p></td>
+                      <td className="px-3 py-2">{machine.workCenter}<p className="text-xs text-slate-500">{machine.department} / {machine.type}</p></td>
+                      <td className="px-3 py-2">{machine.capacityPerHour} {machine.capacityPerHourUnit || 'pcs/hr'}<p className="text-xs text-slate-500">{machine.capacityPerDay} {machine.capacityPerDayUnit || 'pcs/day'}</p></td>
+                      <td className="px-3 py-2">INR {machine.costRate || machine.costPerHour}/{machine.costUnit === 'Per Minute' ? 'min' : 'hr'}<p className="text-xs text-slate-500">INR {Number(machine.costPerHour).toFixed(2)}/hr</p></td>
+                      <td className="px-3 py-2">{machine.defaultOperator}<p className="text-xs text-slate-500">{machine.health} / {machine.efficiency}% efficiency</p></td>
+                      <td className="px-3 py-2">{machine.assignedProduct || 'Not assigned'}<p className="text-xs text-slate-500">{machine.assignedBom || 'Not assigned'}</p></td>
+                      <td className="px-3 py-2"><div className="flex flex-wrap gap-1"><StatusBadge status={machine.todayStatus || 'Idle'} /><StatusBadge status={machine.currentStatus} /></div></td>
+                      <td className="px-3 py-2">
                         <div className="flex gap-2">
                           <button onClick={() => { setSelectedResource({ type: 'Machine', record: machine }); setResourceModalMode('view') }} className="rounded bg-slate-900 px-2 py-1 text-xs text-white dark:bg-sky-600">View</button>
-                          <button onClick={() => { setSelectedResource({ type: 'Machine', record: machine }); setResourceModalMode('edit') }} className="rounded border px-2 py-1 text-xs dark:border-slate-600 dark:text-slate-100">Edit</button>
+                          <button onClick={() => { setEditingMachine(machine); setCreateMachineOpen(true) }} className="rounded border px-2 py-1 text-xs dark:border-slate-600 dark:text-slate-100">Edit</button>
                         </div>
                       </td>
                     </tr>
@@ -981,99 +1178,109 @@ export default function MachinesPage() {
           )}
 
           {activeView === 'Maintenance History' && (
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-sky-50 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                  <tr>
-                    <th className="px-4 py-3">Maintenance ID</th>
-                    <th className="px-4 py-3">Machine</th>
-                    <th className="px-4 py-3">Dates</th>
-                    <th className="px-4 py-3">Reason</th>
-                    <th className="px-4 py-3">Action Taken</th>
-                    <th className="px-4 py-3">Cost</th>
-                    <th className="px-4 py-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMaintenance.map((record) => (
-                    <tr key={record.id} className="border-t border-slate-100 dark:border-slate-800 dark:text-slate-200">
-                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">{record.id}</td>
-                      <td className="px-4 py-3">{record.machineCode}<p className="text-xs text-slate-500">{record.machineName}</p></td>
-                      <td className="px-4 py-3">{record.startDate}<p className="text-xs text-slate-500">to {record.endDate}</p></td>
-                      <td className="px-4 py-3 max-w-xs">{record.reason}</td>
-                      <td className="px-4 py-3 max-w-xs">{record.actionTaken}</td>
-                      <td className="px-4 py-3">INR {record.cost.toLocaleString()}</td>
-                      <td className="px-4 py-3"><StatusBadge status={record.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-slate-700 dark:bg-slate-900"><p className="text-sm text-slate-600 dark:text-slate-300">Under Maintenance</p><p className="text-2xl font-semibold text-amber-700 dark:text-amber-300">{maintenanceOverview.underMaintenance}</p></div>
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 dark:border-slate-700 dark:bg-slate-900"><p className="text-sm text-slate-600 dark:text-slate-300">Due Next 7 Days</p><p className="text-2xl font-semibold text-rose-700 dark:text-rose-300">{maintenanceOverview.dueSoon}</p></div>
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-slate-700 dark:bg-slate-900"><p className="text-sm text-slate-600 dark:text-slate-300">Scheduled</p><p className="text-2xl font-semibold text-sky-700 dark:text-sky-300">{maintenanceOverview.scheduled}</p></div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-slate-700 dark:bg-slate-900"><p className="text-sm text-slate-600 dark:text-slate-300">Maintenance Spend</p><p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-300">INR {maintenanceOverview.spend.toLocaleString()}</p></div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-[0.8fr_1.4fr]">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Machine Maintenance Lookup</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Select a machine to see its history.</p>
+                    </div>
+                    <button onClick={() => setCreateMaintenanceOpen(true)} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white dark:bg-sky-600">Add Maintenance</button>
+                  </div>
+                  <div className="relative mb-3">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
+                    <input value={maintenanceMachineQuery} onChange={(event) => setMaintenanceMachineQuery(event.target.value)} placeholder="Search machine..." className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                  <div className="max-h-[420px] space-y-2 overflow-y-auto">
+                    <button onClick={() => setSelectedMaintenanceMachine('')} className={`w-full rounded-md border px-3 py-2 text-left text-sm ${selectedMaintenanceMachine === '' ? 'border-slate-900 bg-slate-900 text-white dark:border-sky-600 dark:bg-sky-600' : 'border-slate-200 dark:border-slate-700 dark:text-slate-200'}`}>All Machines</button>
+                    {maintenanceMachines.map((machine) => (
+                      <button key={machine.code} onClick={() => setSelectedMaintenanceMachine(machine.code)} className={`w-full rounded-md border px-3 py-2 text-left text-sm ${selectedMaintenanceMachine === machine.code ? 'border-slate-900 bg-slate-900 text-white dark:border-sky-600 dark:bg-sky-600' : 'border-slate-200 dark:border-slate-700 dark:text-slate-200'}`}>
+                        <span className="font-semibold">{machine.code}</span>
+                        <span className="block text-xs opacity-80">{machine.name} / {machine.currentStatus}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                  <table className="min-w-[1180px] text-left text-sm">
+                    <thead className="bg-sky-50 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      <tr>
+                        <th className="px-4 py-3">Maintenance ID</th>
+                        <th className="px-4 py-3">Machine</th>
+                        <th className="px-4 py-3">Type / Priority</th>
+                        <th className="px-4 py-3">Dates</th>
+                        <th className="px-4 py-3">Reason</th>
+                        <th className="px-4 py-3">Action Taken</th>
+                        <th className="px-4 py-3">Downtime / Cost</th>
+                        <th className="px-4 py-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredMaintenance.map((record) => (
+                        <tr key={record.id} className="border-t border-slate-100 dark:border-slate-800 dark:text-slate-200">
+                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">{record.id}</td>
+                          <td className="px-4 py-3">{record.machineCode}<p className="text-xs text-slate-500">{record.machineName}</p></td>
+                          <td className="px-4 py-3">{record.maintenanceType}<p className="text-xs text-slate-500">{record.priority}</p></td>
+                          <td className="px-4 py-3">{record.startDate}<p className="text-xs text-slate-500">to {record.endDate}</p><p className="text-xs text-slate-500">Next: {record.nextDueDate || '-'}</p></td>
+                          <td className="px-4 py-3 max-w-xs">{record.reason}</td>
+                          <td className="px-4 py-3 max-w-xs">{record.actionTaken}<p className="text-xs text-slate-500">{record.partsUsed}</p></td>
+                          <td className="px-4 py-3">{record.downtimeHours || 0} hrs<p className="text-xs text-slate-500">INR {record.cost.toLocaleString()}</p></td>
+                          <td className="px-4 py-3"><StatusBadge status={record.status} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-              <Factory size={17} />
-              Resource Types
-            </div>
-            <div className="space-y-2">
-              {resourceTypes.map((item) => (
-                <div key={item.label} className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.label}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{item.example}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-              <Wrench size={17} />
-              Machine Status Flow
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex flex-wrap items-center gap-2"><StatusBadge status="Available" /><span className="text-slate-400">to</span><StatusBadge status="Running" /><span className="text-slate-400">to</span><StatusBadge status="Idle" /></div>
-              <div className="flex flex-wrap items-center gap-2"><StatusBadge status="Available" /><span className="text-slate-400">to</span><StatusBadge status="Under Maintenance" /><span className="text-slate-400">to</span><StatusBadge status="Available" /></div>
-              <div className="flex flex-wrap items-center gap-2"><StatusBadge status="Running" /><span className="text-slate-400">to</span><StatusBadge status="Breakdown" /><span className="text-slate-400">to</span><StatusBadge status="Under Maintenance" /></div>
-              <StatusBadge status="Inactive" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-              <Activity size={17} />
-              Output To Next Modules
-            </div>
-            <div className="space-y-2">
-              {moduleOutputs.map((item) => (
-                <div key={item} className="rounded-md border border-slate-200 p-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">{item}</div>
-              ))}
-            </div>
-          </div>
-        </div>
       </div>
 
       <CreateLabourModal
         open={createLabourOpen}
+        item={editingLabour}
         machines={machines}
         labours={labours}
-        onClose={() => setCreateLabourOpen(false)}
+        onClose={() => { setCreateLabourOpen(false); setEditingLabour(null) }}
         onCreate={(payload) => {
-          setLabours((prev) => [payload, ...prev])
+          setLabours((prev) => editingLabour ? prev.map((item) => (item.code === editingLabour.code ? payload : item)) : [payload, ...prev])
           setActiveView('Labour')
           setCreateLabourOpen(false)
+          setEditingLabour(null)
         }}
       />
       <CreateMachineModal
         open={createMachineOpen}
+        item={editingMachine}
         labours={labours}
-        onClose={() => setCreateMachineOpen(false)}
+        onClose={() => { setCreateMachineOpen(false); setEditingMachine(null) }}
         onCreate={(payload) => {
-          setMachines((prev) => [payload, ...prev])
+          setMachines((prev) => editingMachine ? prev.map((item) => (item.code === editingMachine.code ? payload : item)) : [payload, ...prev])
           setActiveView('Machines')
           setCreateMachineOpen(false)
+          setEditingMachine(null)
+        }}
+      />
+      <CreateMaintenanceModal
+        open={createMaintenanceOpen}
+        machines={machines}
+        onClose={() => setCreateMaintenanceOpen(false)}
+        onCreate={(payload) => {
+          setMaintenanceRecords((prev) => [payload, ...prev])
+          if (payload.status === 'Under Maintenance') {
+            setMachines((prev) => prev.map((machine) => machine.code === payload.machineCode ? { ...machine, currentStatus: 'Under Maintenance', todayStatus: 'Idle' } : machine))
+          }
+          setSelectedMaintenanceMachine(payload.machineCode)
+          setCreateMaintenanceOpen(false)
         }}
       />
       <ResourceDetailModal
@@ -1082,7 +1289,17 @@ export default function MachinesPage() {
         resourceType={selectedResource?.type}
         record={selectedResource?.record}
         onClose={() => setSelectedResource(null)}
-        onModeChange={setResourceModalMode}
+        onModeChange={() => {
+          if (selectedResource?.type === 'Labour') {
+            setEditingLabour(selectedResource.record)
+            setCreateLabourOpen(true)
+          } else if (selectedResource?.type === 'Machine') {
+            setEditingMachine(selectedResource.record)
+            setCreateMachineOpen(true)
+          }
+          setSelectedResource(null)
+          setResourceModalMode('view')
+        }}
         onSave={(payload) => {
           if (selectedResource?.type === 'Labour') {
             setLabours((prev) => prev.map((item) => (item.code === selectedResource.record.code ? payload : item)))

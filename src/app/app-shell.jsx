@@ -73,9 +73,9 @@ function ProtectedLayout() {
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
       <Sidebar items={items} collapsed={collapsed} userName={userName} role={role} />
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <Topbar theme={theme} onThemeToggle={toggleTheme} role={role} onToggle={() => setCollapsed((s) => !s)} onLogout={() => { logout(); navigate('/login') }} />
-        <main className="p-4 md:p-6"><Outlet /></main>
+        <main className="min-w-0 max-w-full overflow-x-hidden p-4 md:p-6"><Outlet /></main>
       </div>
     </div>
   )

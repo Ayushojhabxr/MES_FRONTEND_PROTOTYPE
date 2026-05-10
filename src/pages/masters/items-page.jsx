@@ -14,6 +14,57 @@ const seedItems = [
   { id: 'SCR-PL-01', itemCode: 'SCR-PL-01', name: 'Rejected plastic scrap', itemType: 'Scrap / Waste', category: 'Reusable Scrap', uom: 'Kg', alternateUnits: 'Gram = 0.001 Kg', hsn: '3915', purchaseRate: 0, saleRate: 18, price: 8, warehouse: 'Scrap Yard', minStock: 0, reorderLevel: 0, stock: 210, batchTracking: false, qcRequired: false, isPurchased: false, isManufactured: false, isSaleable: true, status: 'Active' },
 ]
 
+const warehouseKey = 'aasa_warehouses'
+const fallbackWarehouses = [
+  { code: 'WH-RM-01', name: 'Raw Material Main Store', type: 'Raw Material Store' },
+  { code: 'WH-PKG-01', name: 'Packaging Store', type: 'Packaging Store' },
+  { code: 'WH-WIP-01', name: 'Line 1 WIP Floor', type: 'Production Floor / WIP' },
+  { code: 'WH-QC-01', name: 'QC Hold Cage', type: 'QC Hold Area' },
+  { code: 'WH-REJ-01', name: 'Rejected Material Store', type: 'Rejected Store' },
+  { code: 'WH-FG-01', name: 'Finished Goods Main Store', type: 'Finished Goods Store' },
+  { code: 'WH-DIS-01', name: 'Dispatch Staging Area', type: 'Dispatch Area' },
+]
+
+const readWarehouseOptions = () => {
+  try {
+    const raw = localStorage.getItem(warehouseKey)
+    return raw ? JSON.parse(raw) : fallbackWarehouses
+  } catch {
+    return fallbackWarehouses
+  }
+}
+
+function ImagePicker({ value, onChange }) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Item Image</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Upload a clear item photo for later use in item tables and detail views.</p>
+        </div>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (!file) return
+            const reader = new FileReader()
+            reader.onload = () => onChange(String(reader.result || ''))
+            reader.readAsDataURL(file)
+          }}
+          className="text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white dark:text-slate-300 dark:file:bg-sky-600"
+        />
+      </div>
+      {value && (
+        <div className="mt-3 flex items-center gap-3">
+          <img src={value} alt="Item preview" className="h-20 w-20 rounded-md border border-slate-200 object-cover dark:border-slate-700" />
+          <button type="button" onClick={() => onChange('')} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:text-slate-100">Remove Image</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const readStored = () => {
   try {
     const raw = localStorage.getItem(itemKey)
@@ -62,41 +113,73 @@ function ItemModal({ open, item, onClose, onSave }) {
   if (!open) return null
 
   const update = (patch) => setDraft((prev) => ({ ...prev, ...patch }))
-  const fieldInputClass = 'w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
-  const rowClass = 'grid grid-cols-[220px_minmax(0,1fr)] items-center border-b border-slate-100 py-2 dark:border-slate-800'
-  const labelClass = 'text-sm font-medium text-slate-700 dark:text-slate-200'
+  const warehouses = readWarehouseOptions()
+  const fieldInputClass = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+  const labelClass = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400'
+  const sectionClass = 'rounded-lg border border-slate-200 p-4 dark:border-slate-700'
 
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl dark:bg-slate-900">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl dark:bg-slate-900">
         <div className="mb-4 flex items-start justify-between">
           <div>
             <p className="text-sm text-slate-500 dark:text-slate-400">Item Master</p>
             <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{item ? 'Edit Item' : 'Create Item'}</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Define item identity, units, rates, storage, stock planning, and process controls.</p>
           </div>
           <button onClick={onClose} className="rounded border border-slate-300 p-2 dark:border-slate-700 dark:text-slate-100"><X size={16} /></button>
         </div>
 
-        <div className="rounded-xl border border-slate-200 px-4 dark:border-slate-700">
-          <div className={rowClass}><label className={labelClass}>Item Code</label><input value={draft.itemCode || ''} onChange={(e) => update({ itemCode: e.target.value, id: e.target.value })} className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Item Name</label><input value={draft.name || ''} onChange={(e) => update({ name: e.target.value })} className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Item Type</label><select value={draft.itemType || 'Raw Material'} onChange={(e) => update({ itemType: e.target.value })} className={fieldInputClass}><option>Raw Material</option><option>Packing Material</option><option>Semi-Finished Goods</option><option>Finished Goods</option><option>Scrap / Waste</option><option>Consumable</option><option>Service</option></select></div>
-          <div className={rowClass}><label className={labelClass}>Category</label><input value={draft.category || ''} onChange={(e) => update({ category: e.target.value })} className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Primary Unit</label><input value={draft.uom || ''} onChange={(e) => update({ uom: e.target.value })} className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Alternate Units</label><input value={draft.alternateUnits || ''} onChange={(e) => update({ alternateUnits: e.target.value })} className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>HSN/Tax Code</label><input value={draft.hsn || ''} onChange={(e) => update({ hsn: e.target.value })} className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Purchase Rate</label><input value={draft.purchaseRate || 0} onChange={(e) => update({ purchaseRate: Number(e.target.value || 0), price: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Sale Rate</label><input value={draft.saleRate || 0} onChange={(e) => update({ saleRate: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Standard Cost</label><input value={draft.price || 0} onChange={(e) => update({ price: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Default Warehouse</label><input value={draft.warehouse || ''} onChange={(e) => update({ warehouse: e.target.value })} className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Min Stock Level</label><input value={draft.minStock || 0} onChange={(e) => update({ minStock: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Reorder Level</label><input value={draft.reorderLevel || 0} onChange={(e) => update({ reorderLevel: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></div>
-          <div className={rowClass}><label className={labelClass}>Batch Tracking</label><select value={draft.batchTracking ? 'Yes' : 'No'} onChange={(e) => update({ batchTracking: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></div>
-          <div className={rowClass}><label className={labelClass}>QC Required</label><select value={draft.qcRequired ? 'Yes' : 'No'} onChange={(e) => update({ qcRequired: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></div>
-          <div className={rowClass}><label className={labelClass}>Is Purchased</label><select value={draft.isPurchased ? 'Yes' : 'No'} onChange={(e) => update({ isPurchased: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></div>
-          <div className={rowClass}><label className={labelClass}>Is Manufactured</label><select value={draft.isManufactured ? 'Yes' : 'No'} onChange={(e) => update({ isManufactured: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></div>
-          <div className={rowClass}><label className={labelClass}>Is Saleable</label><select value={draft.isSaleable ? 'Yes' : 'No'} onChange={(e) => update({ isSaleable: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></div>
-          <div className="grid grid-cols-[220px_minmax(0,1fr)] items-center py-2"><label className={labelClass}>Status</label><select value={draft.status || 'Draft'} onChange={(e) => update({ status: e.target.value })} className={fieldInputClass}><option>Draft</option><option>Active</option><option>Inactive</option></select></div>
+        <div className="space-y-4">
+          <div className={sectionClass}>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Item Identity</h3>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Core classification used by BOM, purchase, inventory, production, and sales.</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label><span className={labelClass}>Item Code</span><input value={draft.itemCode || ''} onChange={(e) => update({ itemCode: e.target.value, id: e.target.value })} placeholder="Example: RM-CAP-M24" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Item Name</span><input value={draft.name || ''} onChange={(e) => update({ name: e.target.value })} placeholder="Metal cap 24 mm" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Item Type</span><select value={draft.itemType || 'Raw Material'} onChange={(e) => update({ itemType: e.target.value })} className={fieldInputClass}><option>Raw Material</option><option>Packing Material</option><option>Semi-Finished Goods</option><option>Finished Goods</option><option>Scrap / Waste</option><option>Consumable</option><option>Service</option></select></label>
+              <label><span className={labelClass}>Category</span><input value={draft.category || ''} onChange={(e) => update({ category: e.target.value })} placeholder="Cap, Bottle Body, Carton..." className={fieldInputClass} /></label>
+              <label><span className={labelClass}>HSN / Tax Code</span><input value={draft.hsn || ''} onChange={(e) => update({ hsn: e.target.value })} placeholder="7010" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Status</span><select value={draft.status || 'Draft'} onChange={(e) => update({ status: e.target.value })} className={fieldInputClass}><option>Draft</option><option>Active</option><option>Inactive</option></select></label>
+            </div>
+          </div>
+
+          <div className={sectionClass}>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Units & Rates</h3>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Units and rates drive costing, purchase inward, BOM consumption, and billing.</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label><span className={labelClass}>Primary Unit</span><select value={draft.uom || 'Each'} onChange={(e) => update({ uom: e.target.value })} className={fieldInputClass}><option>Each</option><option>Kg</option><option>Gram</option><option>Litre</option><option>Meter</option><option>Box</option><option>Carton</option><option>Hour</option></select></label>
+              <label><span className={labelClass}>Alternate Units</span><input value={draft.alternateUnits || ''} onChange={(e) => update({ alternateUnits: e.target.value })} placeholder="Box = 120 Each" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Purchase Rate</span><input value={draft.purchaseRate || 0} onChange={(e) => update({ purchaseRate: Number(e.target.value || 0), price: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Sale Rate</span><input value={draft.saleRate || 0} onChange={(e) => update({ saleRate: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Standard Cost</span><input value={draft.price || 0} onChange={(e) => update({ price: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></label>
+            </div>
+          </div>
+
+          <div className={sectionClass}>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Warehouse & Stock Planning</h3>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Default warehouse comes from Warehouse / Location master and controls where stock is received and issued.</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="md:col-span-2"><span className={labelClass}>Default Warehouse</span><select value={draft.warehouse || ''} onChange={(e) => update({ warehouse: e.target.value })} className={fieldInputClass}><option value="">Select warehouse</option>{warehouses.map((warehouse) => <option key={warehouse.code} value={warehouse.code}>{warehouse.code} - {warehouse.name} ({warehouse.type})</option>)}</select></label>
+              <label><span className={labelClass}>Opening Stock</span><input value={draft.stock || 0} onChange={(e) => update({ stock: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Min Stock Level</span><input value={draft.minStock || 0} onChange={(e) => update({ minStock: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></label>
+              <label><span className={labelClass}>Reorder Level</span><input value={draft.reorderLevel || 0} onChange={(e) => update({ reorderLevel: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className={fieldInputClass} /></label>
+            </div>
+          </div>
+
+          <div className={sectionClass}>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Process Controls</h3>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Flags decide how the item behaves in purchase, production, QC, sales, and traceability.</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label><span className={labelClass}>Batch Tracking</span><select value={draft.batchTracking ? 'Yes' : 'No'} onChange={(e) => update({ batchTracking: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></label>
+              <label><span className={labelClass}>QC Required</span><select value={draft.qcRequired ? 'Yes' : 'No'} onChange={(e) => update({ qcRequired: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></label>
+              <label><span className={labelClass}>Purchased Item</span><select value={draft.isPurchased ? 'Yes' : 'No'} onChange={(e) => update({ isPurchased: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></label>
+              <label><span className={labelClass}>Manufactured Item</span><select value={draft.isManufactured ? 'Yes' : 'No'} onChange={(e) => update({ isManufactured: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></label>
+              <label><span className={labelClass}>Saleable Item</span><select value={draft.isSaleable ? 'Yes' : 'No'} onChange={(e) => update({ isSaleable: e.target.value === 'Yes' })} className={fieldInputClass}><option>Yes</option><option>No</option></select></label>
+            </div>
+          </div>
+
+          <ImagePicker value={draft.image || ''} onChange={(image) => update({ image })} />
         </div>
 
         <div className="mt-5 flex justify-end gap-2">

@@ -139,7 +139,7 @@ const normalizeBoms = (products, items) => {
 
 const findItem = (items, itemId) => items.find((item) => item.id === itemId) || items[0]
 
-const lineCost = (line, items) => Number(line?.quantity || 0) * Number(findItem(items, line?.itemId)?.price || 0)
+const lineCost = (line, items) => ['Route Stage', 'Text'].includes(line?.type) ? 0 : Number(line?.quantity || 0) * Number(findItem(items, line?.itemId)?.price || 0)
 
 const bomCost = (bom, items) => (Array.isArray(bom?.lines) ? bom.lines : []).reduce((sum, line) => sum + lineCost(line, items), 0)
 
@@ -214,7 +214,7 @@ export default function BomPage() {
   const [query, setQuery] = useState('')
   const [itemOpen, setItemOpen] = useState(false)
   const [viewMode, setViewMode] = useState('list')
-  const [newStageName, setNewStageName] = useState('')
+  const [showThumbnails, setShowThumbnails] = useState(false)
 
   useEffect(() => { localStorage.setItem(itemKey, JSON.stringify(items)) }, [items])
   useEffect(() => { localStorage.setItem(productKey, JSON.stringify(products)) }, [products])
@@ -249,12 +249,52 @@ export default function BomPage() {
 
   const productCost = bomCost(draft, items)
   const margin = Number(draft.productPrice || 0) - productCost
+  const lines = Array.isArray(draft.lines) ? draft.lines : []
+  const stageCount = Math.max((draft.stages || []).length, lines.filter((line) => line.type === 'Route Stage').length)
+  const itemCount = lines.filter((line) => line.type === 'Item').length
+  const resourceLines = lines.filter((line) => line.type === 'Resource')
+  const labourResourceCount = resourceLines.filter((line) => {
+    const item = findItem(items, line.itemId)
+    return /labou?r|operator|staff/i.test(`${item?.id || ''} ${item?.name || ''}`)
+  }).length
+  const machineResourceCount = resourceLines.length - labourResourceCount
 
   const updateLine = (index, patch) => {
     setDraft((prev) => ({
       ...prev,
       lines: (Array.isArray(prev.lines) ? prev.lines : []).map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line),
     }))
+  }
+
+  const addLineToStage = (stage, type = 'Item') => {
+    const firstMatch = type === 'Route Stage' ? null : items.find((item) => type === 'Text' || item.category === type) || items[0]
+    setDraft((prev) => ({
+      ...prev,
+      lines: [
+        ...(Array.isArray(prev.lines) ? prev.lines : []),
+        {
+          stage,
+          type,
+          itemId: firstMatch?.id || '',
+          quantity: type === 'Route Stage' ? 0 : 1,
+          warehouse: firstMatch?.warehouse || prev.warehouse || '04',
+          issueMethod: type === 'Resource' || type === 'Route Stage' ? 'Manual' : 'Backflush',
+          priceList: prev.priceList || 'MSRP',
+          comments: type === 'Route Stage' ? stage : '',
+        },
+      ],
+    }))
+  }
+
+  const removeStage = (stage) => {
+    setDraft((prev) => {
+      const stages = (prev.stages || []).filter((item) => item !== stage)
+      return {
+        ...prev,
+        stages: stages.length ? stages : ['Stage 1'],
+        lines: (Array.isArray(prev.lines) ? prev.lines : []).filter((line) => line.stage !== stage),
+      }
+    })
   }
 
   const saveBom = () => {
@@ -359,9 +399,9 @@ export default function BomPage() {
   }
 
   return (
-    <section className="max-w-full space-y-4 overflow-hidden">
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+    <section className="w-full min-w-0 max-w-full space-y-4 overflow-hidden">
+      <div className="w-full min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-700 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm text-slate-500 dark:text-slate-400">Production / Bill of Materials</p>
             <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Bill of Materials</h1>
@@ -375,184 +415,219 @@ export default function BomPage() {
           </div>
         </div>
 
-        <div className="grid gap-5 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="grid items-center gap-3 md:grid-cols-[180px_minmax(0,1fr)_110px]">
-            <label className="text-sm text-slate-600 dark:text-slate-300">Product No.</label>
-            <input value={draft.productNo} onChange={(e) => setDraft({ ...draft, productNo: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
-            <input value={draft.parentQty} onChange={(e) => setDraft({ ...draft, parentQty: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" title="Quantity" />
-
-            <label className="text-sm text-slate-600 dark:text-slate-300">Product Description</label>
-            <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:col-span-2" />
-
-            <label className="text-sm text-slate-600 dark:text-slate-300">BOM Type</label>
-            <select value={draft.bomType} onChange={(e) => setDraft({ ...draft, bomType: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:col-span-2">
-              <option>Production</option>
-              <option>Sales</option>
-              <option>Assembly</option>
-              <option>Template</option>
-            </select>
-
-            <label className="text-sm text-slate-600 dark:text-slate-300">Production Std Cost</label>
-            <input value={inr(productCost)} readOnly className="rounded border border-slate-300 bg-slate-50 px-3 py-2 text-right text-sm font-semibold dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:col-span-2" />
-
-            <label className="text-sm text-slate-600 dark:text-slate-300">Planned Average Production Size</label>
-            <input value={draft.plannedAverageProductionSize} onChange={(e) => setDraft({ ...draft, plannedAverageProductionSize: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:col-span-2" />
-
-            <label className="text-sm text-slate-600 dark:text-slate-300">Status</label>
-            <select value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:col-span-2">
-              <option>Draft</option>
-              <option>Approved</option>
-              <option>On Hold</option>
-            </select>
+        <div className="grid min-w-0 gap-3 p-3 lg:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Product Identity</h2>
+            <div className="mt-2 grid gap-2 md:grid-cols-[1fr_6rem]">
+              <label className="min-w-0">
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Product No.</span>
+                <input value={draft.productNo} onChange={(e) => setDraft({ ...draft, productNo: e.target.value })} placeholder="FG-PB-100" className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Parent Qty</span>
+                <input value={draft.parentQty} onChange={(e) => setDraft({ ...draft, parentQty: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Description</span>
+                <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Finished product description" className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+              </label>
+            </div>
           </div>
 
-          <div className="grid content-start items-center gap-3 md:grid-cols-[100px_minmax(0,1fr)]">
-            <label className="text-sm text-slate-600 dark:text-slate-300">Warehouse</label>
-            <input value={draft.warehouse} onChange={(e) => setDraft({ ...draft, warehouse: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
-            <label className="text-sm text-slate-600 dark:text-slate-300">Price List</label>
-            <select value={draft.priceList} onChange={(e) => setDraft({ ...draft, priceList: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-              <option>MSRP</option>
-              <option>Purchase</option>
-              <option>Standard</option>
-            </select>
-            <label className="text-sm text-slate-600 dark:text-slate-300">Distr. Rule</label>
-            <input value={draft.distrRule} onChange={(e) => setDraft({ ...draft, distrRule: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
-            <label className="text-sm text-slate-600 dark:text-slate-300">Project</label>
-            <input value={draft.project} onChange={(e) => setDraft({ ...draft, project: e.target.value })} className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+          <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Planning</h2>
+            <div className="mt-2 grid gap-2">
+              <label>
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">BOM Type</span>
+                <select value={draft.bomType} onChange={(e) => setDraft({ ...draft, bomType: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                  <option>Production</option>
+                  <option>Sales</option>
+                  <option>Assembly</option>
+                  <option>Template</option>
+                </select>
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Warehouse</span>
+                <input value={draft.warehouse} onChange={(e) => setDraft({ ...draft, warehouse: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Avg Production Size</span>
+                <input value={draft.plannedAverageProductionSize} onChange={(e) => setDraft({ ...draft, plannedAverageProductionSize: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Commercial</h2>
+            <div className="mt-2 grid gap-2">
+              <label>
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Status</span>
+                <select value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                  <option>Draft</option>
+                  <option>Approved</option>
+                  <option>On Hold</option>
+                </select>
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Price List</span>
+                <select value={draft.priceList} onChange={(e) => setDraft({ ...draft, priceList: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                  <option>MSRP</option>
+                  <option>Purchase</option>
+                  <option>Standard</option>
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-md bg-slate-50 p-2 dark:bg-slate-800">
+                  <p className="text-xs text-slate-500">BOM Cost</p>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{inr(productCost)}</p>
+                </div>
+                <div className="rounded-md bg-slate-50 p-2 dark:bg-slate-800">
+                  <p className="text-xs text-slate-500">Margin</p>
+                  <p className={`font-semibold ${margin >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>{inr(margin)}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search BOM..." className="w-full rounded border border-slate-300 py-2 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
-          </div>
-          <div className="mt-3 max-h-[620px] space-y-2 overflow-y-auto">
-            {filteredProducts.map((product) => (
-              <button key={product.id} onClick={() => setSelectedId(product.id)} className={`w-full rounded-lg border p-3 text-left text-sm ${draft.id === product.id ? 'border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30' : 'border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800'}`}>
-                <p className="font-semibold text-slate-900 dark:text-slate-100">{product.productNo || 'New Product'}</p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{product.description || 'No description'}</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{inr(bomCost(product, items))} cost</p>
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="border-b border-slate-200 p-3 dark:border-slate-700">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Production Stages</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Each stage can contain its own item and resource lines.</p>
-              </div>
-              <div className="flex gap-2">
-                <input value={newStageName} onChange={(e) => setNewStageName(e.target.value)} placeholder="Stage name" className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
-                <button
-                  onClick={() => {
-                    const name = newStageName.trim()
-                    if (!name || (draft.stages || []).includes(name)) return
-                    setDraft((prev) => ({ ...prev, stages: [...(prev.stages || []), name] }))
-                    setNewStageName('')
-                  }}
-                  className="rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:text-slate-100"
-                >
-                  Add Stage
-                </button>
-              </div>
+      <div className="w-full min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="border-b border-slate-200 p-3 dark:border-slate-700">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Production Stages</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Use Type = Route Stage for stage marker rows. Add item and resource rows below each stage.</p>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(draft.stages || []).map((stage) => (
-                <span key={stage} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">{stage}</span>
-              ))}
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800"><p className="text-xs text-slate-500">Stages</p><p className="text-sm font-semibold">{stageCount}</p></div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800"><p className="text-xs text-slate-500">Items</p><p className="text-sm font-semibold">{itemCount}</p></div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800"><p className="text-xs text-slate-500">Labour</p><p className="text-sm font-semibold">{labourResourceCount}</p></div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800"><p className="text-xs text-slate-500">Machines</p><p className="text-sm font-semibold">{machineResourceCount}</p></div>
+              <label className="flex items-center justify-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">
+                <input type="checkbox" checked={showThumbnails} onChange={(e) => setShowThumbnails(e.target.checked)} />
+                Thumbnails
+              </label>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3 dark:border-slate-700">
-            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <Calculator size={16} />
-              <span>Component grid with SAP-style issue method and cost rollup</span>
-            </div>
-            <button onClick={() => setDraft((prev) => ({ ...prev, lines: [...(Array.isArray(prev.lines) ? prev.lines : []), { stage: prev.stages?.[0] || 'Stage 1', type: 'Item', itemId: items[0]?.id || '', quantity: 1, warehouse: prev.warehouse || '04', issueMethod: 'Backflush', priceList: prev.priceList || 'MSRP', comments: '' }] }))} className="flex items-center gap-1 rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:text-slate-100">
-              <Plus size={15} /> Add Row
-            </button>
-          </div>
-          <div className="max-w-full overflow-x-auto">
-            <table className="min-w-[2020px] table-fixed text-left text-sm">
-              <thead className="bg-slate-100 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                <tr>
-                  <th className="w-10 px-3 py-2">#</th>
-                  <th className="w-[140px]">Stage</th>
-                  <th className="w-[130px]">Type</th>
-                  <th className="w-[180px]">No.</th>
-                  <th className="w-[300px]">Description</th>
-                  <th className="w-[120px]">Quantity</th>
-                  <th className="w-[100px]">UoM Name</th>
-                  <th className="w-[110px]">Warehouse</th>
-                  <th className="w-[140px]">Issue Method</th>
-                  <th className="w-[150px]">Production Std Cost</th>
-                  <th className="w-[170px]">Total Production Std Cost</th>
-                  <th className="w-[120px]">Price List</th>
-                  <th className="w-[120px]">Unit Price</th>
-                  <th className="w-[120px]">Total</th>
-                  <th className="w-[90px]">Weight</th>
-                  <th className="w-[220px]">Comments</th>
-                  <th className="w-[60px]"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(Array.isArray(draft.lines) ? draft.lines : []).map((line, index) => {
-                  const item = findItem(items, line.itemId)
-                  const total = lineCost(line, items)
-                  return (
-                    <tr key={`${line.itemId}-${index}`} className="border-t border-slate-100 dark:border-slate-800 dark:text-slate-200">
-                      <td className="px-3 py-2 text-slate-500">{index + 1}</td>
-                      <td className="pr-2">
-                        <select value={line.stage || draft.stages?.[0] || 'Stage 1'} onChange={(e) => updateLine(index, { stage: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-                          {(draft.stages || ['Stage 1']).map((stage) => <option key={stage}>{stage}</option>)}
-                        </select>
-                      </td>
-                      <td className="pr-2">
-                        <select value={line.type} onChange={(e) => updateLine(index, { type: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-                          <option>Item</option>
-                          <option>Resource</option>
-                          <option>Text</option>
-                        </select>
-                      </td>
-                      <td className="pr-2">
-                        <select value={line.itemId} onChange={(e) => updateLine(index, { itemId: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-                          {items.filter((candidate) => line.type === 'Text' || candidate.category === line.type).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}
-                        </select>
-                      </td>
-                      <td className="truncate pr-3" title={item?.name}>{item?.name}</td>
-                      <td className="pr-2"><input value={line.quantity} onChange={(e) => updateLine(index, { quantity: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className="w-full rounded border border-slate-300 px-2 py-1.5 text-right dark:border-slate-700 dark:bg-slate-800" /></td>
-                      <td>{item?.uom}</td>
-                      <td className="pr-2"><input value={line.warehouse} onChange={(e) => updateLine(index, { warehouse: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800" /></td>
-                      <td className="pr-2">
-                        <select value={line.issueMethod} onChange={(e) => updateLine(index, { issueMethod: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-                          <option>Backflush</option>
-                          <option>Manual</option>
-                        </select>
-                      </td>
-                      <td>{inr(item?.price)}</td>
-                      <td>{inr(total)}</td>
-                      <td className="pr-2">
-                        <select value={line.priceList} onChange={(e) => updateLine(index, { priceList: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-                          <option>MSRP</option>
-                          <option>Purchase</option>
-                          <option>Standard</option>
-                        </select>
-                      </td>
-                      <td>{inr(item?.price)}</td>
-                      <td className="font-semibold">{inr(total)}</td>
-                      <td>{item?.weight}</td>
-                      <td className="pr-2"><input value={line.comments} onChange={(e) => updateLine(index, { comments: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800" /></td>
-                      <td><button onClick={() => setDraft((prev) => ({ ...prev, lines: (Array.isArray(prev.lines) ? prev.lines : []).filter((_, lineIndex) => lineIndex !== index) }))} className="rounded border p-1.5 text-rose-600 dark:border-slate-700"><Trash2 size={15} /></button></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        </div>
+          <div className="w-full min-w-0 space-y-3 p-3">
+            {(draft.stages || ['Stage 1']).map((stage) => {
+              const stageLines = (Array.isArray(draft.lines) ? draft.lines : []).map((line, index) => ({ line, index })).filter(({ line }) => line.stage === stage)
+              return (
+                <div key={stage} className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{stage}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{stageLines.length} item/resource lines in this stage</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => addLineToStage(stage, 'Route Stage')} className="flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-2 py-1.5 text-xs text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300"><Plus size={14} /> Stage Row</button>
+                      <button onClick={() => addLineToStage(stage, 'Item')} className="flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><Plus size={14} /> Add Item</button>
+                      <button onClick={() => addLineToStage(stage, 'Resource')} className="flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><Plus size={14} /> Add Resource</button>
+                    </div>
+                  </div>
+                  <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
+                    <table className={`${showThumbnails ? 'min-w-[1740px]' : 'min-w-[1660px]'} table-fixed text-left text-sm`}>
+                      <thead className="bg-slate-100 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        <tr>
+                          <th className="w-10 px-3 py-2">#</th>
+                          {showThumbnails && <th className="w-[84px]">Image</th>}
+                          <th className="w-[120px]">Type</th>
+                          <th className="w-[160px]">No.</th>
+                          <th className="w-[280px]">Description</th>
+                          <th className="w-[100px]">Quantity</th>
+                          <th className="w-[80px]">UoM</th>
+                          <th className="w-[95px]">Warehouse</th>
+                          <th className="w-[120px]">Issue Method</th>
+                          <th className="w-[120px]">Std Cost</th>
+                          <th className="w-[140px]">Total Std Cost</th>
+                          <th className="w-[105px]">Price List</th>
+                          <th className="w-[105px]">Unit Price</th>
+                          <th className="w-[105px]">Total</th>
+                          <th className="w-[70px]">Weight</th>
+                          <th className="w-[180px]">Comments</th>
+                          <th className="w-[60px]"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stageLines.map(({ line, index }, rowIndex) => {
+                          const isRouteStage = line.type === 'Route Stage'
+                          const item = isRouteStage ? null : findItem(items, line.itemId)
+                          const total = lineCost(line, items)
+                          return (
+                            <tr key={`${line.itemId}-${index}`} className={`border-t border-slate-100 dark:border-slate-800 dark:text-slate-200 ${isRouteStage ? 'bg-sky-50/70 dark:bg-sky-950/20' : ''}`}>
+                              <td className="px-3 py-1 text-slate-500">{rowIndex + 1}</td>
+                              {showThumbnails && (
+                                <td>
+                                  {!isRouteStage && item?.image ? <img src={item.image} alt={item.name} className="h-10 w-10 rounded border border-slate-200 object-cover dark:border-slate-700" /> : <span className="text-xs text-slate-400">-</span>}
+                                </td>
+                              )}
+                              <td className="pr-2">
+                                <select value={line.type} title="Change type. Route Stage makes this row a stage marker." onChange={(e) => {
+                                  const nextType = e.target.value
+                                  const firstMatch = items.find((candidate) => nextType === 'Text' || candidate.category === nextType) || items[0]
+                                  updateLine(index, {
+                                    type: nextType,
+                                    itemId: nextType === 'Route Stage' ? '' : firstMatch?.id || line.itemId,
+                                    quantity: nextType === 'Route Stage' ? 0 : line.quantity || 1,
+                                    issueMethod: nextType === 'Resource' || nextType === 'Route Stage' ? 'Manual' : 'Backflush',
+                                  })
+                                }} className="w-full rounded border border-slate-300 px-2 py-1 dark:border-slate-700 dark:bg-slate-800">
+                                  <option>Route Stage</option>
+                                  <option>Item</option>
+                                  <option>Resource</option>
+                                  <option>Text</option>
+                                </select>
+                              </td>
+                              <td className="pr-2">
+                                {isRouteStage ? (
+                                  <span className="text-xs font-semibold text-sky-700 dark:text-sky-300">Stage Marker</span>
+                                ) : (
+                                  <select value={line.itemId} onChange={(e) => updateLine(index, { itemId: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 dark:border-slate-700 dark:bg-slate-800">
+                                    {items.filter((candidate) => line.type === 'Text' || candidate.category === line.type).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}
+                                  </select>
+                                )}
+                              </td>
+                              <td className="truncate pr-3" title={isRouteStage ? (line.comments || stage) : item?.name}>
+                                {isRouteStage ? <input value={line.comments || stage} onChange={(e) => updateLine(index, { comments: e.target.value })} className="w-full rounded border border-sky-200 px-2 py-1 font-semibold dark:border-sky-800 dark:bg-slate-800" /> : item?.name}
+                              </td>
+                              <td className="pr-2"><input value={line.quantity} disabled={isRouteStage} onChange={(e) => updateLine(index, { quantity: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className="w-full rounded border border-slate-300 px-2 py-1 text-right disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" /></td>
+                              <td>{isRouteStage ? '-' : item?.uom}</td>
+                              <td className="pr-2"><input value={line.warehouse} disabled={isRouteStage} onChange={(e) => updateLine(index, { warehouse: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" /></td>
+                              <td className="pr-2">
+                                <select value={line.issueMethod} disabled={isRouteStage} onChange={(e) => updateLine(index, { issueMethod: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900">
+                                  <option>Backflush</option>
+                                  <option>Manual</option>
+                                </select>
+                              </td>
+                              <td>{isRouteStage ? '-' : inr(item?.price)}</td>
+                              <td>{inr(total)}</td>
+                              <td className="pr-2">
+                                <select value={line.priceList} disabled={isRouteStage} onChange={(e) => updateLine(index, { priceList: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900">
+                                  <option>MSRP</option>
+                                  <option>Purchase</option>
+                                  <option>Standard</option>
+                                </select>
+                              </td>
+                              <td>{isRouteStage ? '-' : inr(item?.price)}</td>
+                              <td className="font-semibold">{inr(total)}</td>
+                              <td>{isRouteStage ? '-' : item?.weight}</td>
+                              <td className="pr-2"><input value={isRouteStage ? '' : line.comments} disabled={isRouteStage} onChange={(e) => updateLine(index, { comments: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" /></td>
+                              <td><button onClick={() => setDraft((prev) => ({ ...prev, lines: (Array.isArray(prev.lines) ? prev.lines : []).filter((_, lineIndex) => lineIndex !== index) }))} className="rounded border p-1.5 text-rose-600 dark:border-slate-700"><Trash2 size={15} /></button></td>
+                            </tr>
+                          )
+                        })}
+                        {!stageLines.length && (
+                          <tr className="border-t border-slate-100 dark:border-slate-800">
+                            <td colSpan={showThumbnails ? 18 : 17} className="px-3 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No lines in this stage yet. Use Stage Row, Add Item, or Add Resource.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4 dark:border-slate-700">
             <div className="grid gap-1 text-sm">
@@ -564,7 +639,6 @@ export default function BomPage() {
               <p className="text-right font-semibold text-slate-900 dark:text-slate-100">BOM Cost {inr(productCost)}</p>
             </div>
           </div>
-        </div>
       </div>
 
       <AddItemModal

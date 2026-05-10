@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Boxes, Building2, MapPin, Plus, Search, Warehouse } from 'lucide-react'
 import { StatusBadge } from '../../components/badges/status-badge'
 
@@ -12,6 +12,8 @@ const warehouseTypes = [
   { type: 'Finished Goods Store', purpose: 'Saleable goods', count: 2, tone: 'emerald' },
   { type: 'Dispatch Area', purpose: 'Goods ready to ship', count: 1, tone: 'cyan' },
 ]
+
+const warehouseKey = 'aasa_warehouses'
 
 const initialWarehouses = [
   {
@@ -92,6 +94,15 @@ const initialWarehouses = [
     status: 'Active',
   },
 ]
+
+const readWarehouses = () => {
+  try {
+    const raw = localStorage.getItem(warehouseKey)
+    return raw ? JSON.parse(raw) : initialWarehouses
+  } catch {
+    return initialWarehouses
+  }
+}
 
 const moduleOutputs = [
   { label: 'Inventory Ledger', detail: 'Uses warehouse from/to for every movement.' },
@@ -175,8 +186,12 @@ function CreateWarehouseModal({ open, onClose, onCreate }) {
 
 export default function WarehousesPage() {
   const [query, setQuery] = useState('')
-  const [warehouses, setWarehouses] = useState(initialWarehouses)
+  const [warehouses, setWarehouses] = useState(readWarehouses)
   const [createOpen, setCreateOpen] = useState(false)
+
+  useEffect(() => {
+    localStorage.setItem(warehouseKey, JSON.stringify(warehouses))
+  }, [warehouses])
 
   const filteredWarehouses = useMemo(
     () => warehouses.filter((item) => JSON.stringify(item).toLowerCase().includes(query.toLowerCase())),
