@@ -14,6 +14,8 @@ import {
 
 const itemKey = 'aasa_bom_items'
 const productKey = 'aasa_bom_products'
+const labourKey = 'aasa_labour_resources'
+const machineKey = 'aasa_machine_resources'
 const inr = (value) => `INR ${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
 const seedItems = [
@@ -47,7 +49,7 @@ const seedProducts = [
       { stage: 'Assembly', type: 'Item', itemId: 'IT-CAP-M24', quantity: 1, warehouse: '04', issueMethod: 'Backflush', priceList: 'MSRP', comments: 'Cap fitment' },
       { stage: 'Assembly', type: 'Item', itemId: 'IT-PUMP-01', quantity: 1, warehouse: '04', issueMethod: 'Backflush', priceList: 'MSRP', comments: 'Spray pump' },
       { stage: 'Packing', type: 'Item', itemId: 'IT-LABEL-FB', quantity: 2, warehouse: '04', issueMethod: 'Manual', priceList: 'MSRP', comments: 'Front and back labels' },
-      { stage: 'Assembly', type: 'Resource', itemId: 'RES-LAB-01', quantity: 0.08, warehouse: '04', issueMethod: 'Manual', priceList: 'MSRP', comments: 'Assembly labour' },
+      { stage: 'Assembly', type: 'Resource', resourceType: 'Labour', resourceCode: 'LAB-001', resourceUnit: 'Hr', quantity: 0.08, warehouse: '04', issueMethod: 'Manual', priceList: 'MSRP', comments: 'Assembly labour' },
     ],
   },
   {
@@ -66,9 +68,21 @@ const seedProducts = [
     stages: ['Moulding', 'Sleeve Fitment'],
     lines: [
       { stage: 'Moulding', type: 'Item', itemId: 'IT-PP-GRN', quantity: 18, warehouse: '04', issueMethod: 'Backflush', priceList: 'MSRP', comments: 'Plastic consumption in grams' },
-      { stage: 'Moulding', type: 'Resource', itemId: 'RES-LAB-01', quantity: 0.02, warehouse: '04', issueMethod: 'Manual', priceList: 'MSRP', comments: 'Moulding labour' },
+      { stage: 'Moulding', type: 'Resource', resourceType: 'Machine', resourceCode: 'IM-450T-01', resourceUnit: 'Hr', quantity: 0.02, warehouse: '04', issueMethod: 'Manual', priceList: 'MSRP', comments: 'Moulding machine runtime' },
     ],
   },
+]
+
+const seedLabours = [
+  { code: 'LAB-001', name: 'Ramesh Yadav', designation: 'Operator', workType: 'Operates injection moulding machines', costPerHour: 180, costPerMinute: 3, availability: 'Available', assignedMachine: 'IM-450T-01' },
+  { code: 'LAB-002', name: 'Sunita Rao', designation: 'Operator', workType: 'Manual packing, labelling, carton sealing', costPerHour: 140, costPerMinute: 2.33, availability: 'Available', assignedMachine: 'PKG-LINE-02' },
+  { code: 'LAB-003', name: 'Iqbal Khan', designation: 'Operator', workType: 'Runs UV curing and inspection line', costPerHour: 210, costPerMinute: 3.5, availability: 'On Shift', assignedMachine: 'UV-COAT-01' },
+]
+
+const seedMachines = [
+  { code: 'IM-450T-01', name: 'Injection Moulding 450T', type: 'Injection', workCenter: 'Moulding Bay', costPerHour: 1250, costPerMinute: 20.83, capacityPerHour: 120, currentStatus: 'Running', efficiency: 91 },
+  { code: 'UV-COAT-01', name: 'UV Coating Line', type: 'UV', workCenter: 'UV Section', costPerHour: 780, costPerMinute: 13, capacityPerHour: 340, currentStatus: 'Available', efficiency: 96 },
+  { code: 'PKG-LINE-02', name: 'Automatic Packing Line 2', type: 'Packing', workCenter: 'Packing Section', costPerHour: 420, costPerMinute: 7, capacityPerHour: 520, currentStatus: 'Available', efficiency: 88 },
 ]
 
 const readStored = (key, fallback) => {
@@ -123,6 +137,9 @@ const normalizeBom = (bom, items) => {
       stage: line.stage || bom.stages?.[0] || 'Stage 1',
       type: line.type || 'Item',
       itemId: line.itemId || items[0]?.id || '',
+      resourceType: line.resourceType || undefined,
+      resourceCode: line.resourceCode || undefined,
+      resourceUnit: line.resourceUnit || undefined,
       quantity: Number(line.quantity || line.qty || 0),
       warehouse: line.warehouse || bom.warehouse || '04',
       issueMethod: line.issueMethod || 'Backflush',
@@ -139,9 +156,41 @@ const normalizeBoms = (products, items) => {
 
 const findItem = (items, itemId) => items.find((item) => item.id === itemId) || items[0]
 
-const lineCost = (line, items) => ['Route Stage', 'Text'].includes(line?.type) ? 0 : Number(line?.quantity || 0) * Number(findItem(items, line?.itemId)?.price || 0)
+const normalizeResourceLine = (line, labours, machines) => {
+  if (line?.type !== 'Resource') return line
+  const inferredLabour = labours.find((labour) => labour.code === line.resourceCode || labour.code === line.itemId)
+  const inferredMachine = machines.find((machine) => machine.code === line.resourceCode || machine.code === line.itemId)
+  const resourceType = line.resourceType || (inferredMachine ? 'Machine' : 'Labour')
+  const fallback = resourceType === 'Machine' ? machines[0] : labours[0]
+  const selected = resourceType === 'Machine' ? inferredMachine : inferredLabour
+  return {
+    ...line,
+    resourceType,
+    resourceCode: line.resourceCode || selected?.code || fallback?.code || '',
+    resourceUnit: line.resourceUnit || 'Hr',
+  }
+}
 
-const bomCost = (bom, items) => (Array.isArray(bom?.lines) ? bom.lines : []).reduce((sum, line) => sum + lineCost(line, items), 0)
+const findResource = (line, labours, machines) => {
+  if (line?.type !== 'Resource') return null
+  return line.resourceType === 'Machine'
+    ? machines.find((machine) => machine.code === line.resourceCode) || machines[0]
+    : labours.find((labour) => labour.code === line.resourceCode) || labours[0]
+}
+
+const resourceRate = (line, labours, machines) => {
+  const resource = findResource(line, labours, machines)
+  if (!resource) return 0
+  return line.resourceUnit === 'Min' ? Number(resource.costPerMinute || 0) : Number(resource.costPerHour || 0)
+}
+
+const lineCost = (line, items, labours = seedLabours, machines = seedMachines) => {
+  if (['Route Stage', 'Text'].includes(line?.type)) return 0
+  if (line?.type === 'Resource') return Number(line?.quantity || 0) * resourceRate(line, labours, machines)
+  return Number(line?.quantity || 0) * Number(findItem(items, line?.itemId)?.price || 0)
+}
+
+const bomCost = (bom, items, labours = seedLabours, machines = seedMachines) => (Array.isArray(bom?.lines) ? bom.lines : []).reduce((sum, line) => sum + lineCost(line, items, labours, machines), 0)
 
 const canMake = (bom, items) => {
   const itemLines = (Array.isArray(bom?.lines) ? bom.lines : []).filter((line) => line.type === 'Item' && Number(line.quantity) > 0)
@@ -208,6 +257,8 @@ function BomSummaryCard({ label, value, note }) {
 
 export default function BomPage() {
   const [items, setItems] = useState(() => readStored(itemKey, seedItems))
+  const [labours, setLabours] = useState(() => readStored(labourKey, seedLabours))
+  const [machines, setMachines] = useState(() => readStored(machineKey, seedMachines))
   const [products, setProducts] = useState(() => normalizeBoms(readStored(productKey, seedProducts), readStored(itemKey, seedItems)))
   const [selectedId, setSelectedId] = useState(() => normalizeBoms(readStored(productKey, seedProducts), readStored(itemKey, seedItems))[0]?.id)
   const [draft, setDraft] = useState(() => normalizeBoms(readStored(productKey, seedProducts), readStored(itemKey, seedItems))[0] || blankBom(seedItems))
@@ -222,8 +273,12 @@ export default function BomPage() {
   useEffect(() => {
     const syncFromStorage = () => {
       const storedItems = readStored(itemKey, seedItems)
+      const storedLabours = readStored(labourKey, seedLabours)
+      const storedMachines = readStored(machineKey, seedMachines)
       const storedProducts = normalizeBoms(readStored(productKey, seedProducts), storedItems)
       setItems(storedItems)
+      setLabours(storedLabours)
+      setMachines(storedMachines)
       setProducts(storedProducts)
       const selected = storedProducts.find((product) => product.id === selectedId)
       if (selected && viewMode === 'editor') setDraft(JSON.parse(JSON.stringify(normalizeBom(selected, storedItems))))
@@ -247,17 +302,15 @@ export default function BomPage() {
     return products.filter((product) => JSON.stringify(product).toLowerCase().includes(needle))
   }, [products, query])
 
-  const productCost = bomCost(draft, items)
-  const margin = Number(draft.productPrice || 0) - productCost
   const lines = Array.isArray(draft.lines) ? draft.lines : []
+  const normalizedLines = useMemo(() => lines.map((line) => normalizeResourceLine(line, labours, machines)), [lines, labours, machines])
+  const productCost = bomCost({ ...draft, lines: normalizedLines }, items, labours, machines)
+  const margin = Number(draft.productPrice || 0) - productCost
   const stageCount = Math.max((draft.stages || []).length, lines.filter((line) => line.type === 'Route Stage').length)
   const itemCount = lines.filter((line) => line.type === 'Item').length
   const resourceLines = lines.filter((line) => line.type === 'Resource')
-  const labourResourceCount = resourceLines.filter((line) => {
-    const item = findItem(items, line.itemId)
-    return /labou?r|operator|staff/i.test(`${item?.id || ''} ${item?.name || ''}`)
-  }).length
-  const machineResourceCount = resourceLines.length - labourResourceCount
+  const labourResourceCount = resourceLines.filter((line) => normalizeResourceLine(line, labours, machines).resourceType !== 'Machine').length
+  const machineResourceCount = resourceLines.filter((line) => normalizeResourceLine(line, labours, machines).resourceType === 'Machine').length
 
   const updateLine = (index, patch) => {
     setDraft((prev) => ({
@@ -267,7 +320,8 @@ export default function BomPage() {
   }
 
   const addLineToStage = (stage, type = 'Item') => {
-    const firstMatch = type === 'Route Stage' ? null : items.find((item) => type === 'Text' || item.category === type) || items[0]
+    const firstMatch = type === 'Route Stage' || type === 'Resource' ? null : items.find((item) => type === 'Text' || item.category === type) || items[0]
+    const defaultLabour = labours[0]
     setDraft((prev) => ({
       ...prev,
       lines: [
@@ -276,6 +330,9 @@ export default function BomPage() {
           stage,
           type,
           itemId: firstMatch?.id || '',
+          resourceType: type === 'Resource' ? 'Labour' : undefined,
+          resourceCode: type === 'Resource' ? defaultLabour?.code || '' : undefined,
+          resourceUnit: type === 'Resource' ? 'Hr' : undefined,
           quantity: type === 'Route Stage' ? 0 : 1,
           warehouse: firstMatch?.warehouse || prev.warehouse || '04',
           issueMethod: type === 'Resource' || type === 'Route Stage' ? 'Manual' : 'Backflush',
@@ -298,7 +355,7 @@ export default function BomPage() {
   }
 
   const saveBom = () => {
-    const payload = normalizeBom({ ...draft, id: draft.id || `BOM-${Date.now()}` }, items)
+    const payload = normalizeBom({ ...draft, id: draft.id || `BOM-${Date.now()}`, lines: normalizedLines }, items)
     setProducts((prev) => prev.some((product) => product.id === payload.id) ? prev.map((product) => product.id === payload.id ? payload : product) : [payload, ...prev])
     setSelectedId(payload.id)
   }
@@ -373,7 +430,7 @@ export default function BomPage() {
                     <td>{(product.stages || []).length}</td>
                     <td>{(product.lines || []).length}</td>
                     <td>{canMake(product, items).toLocaleString('en-IN')}</td>
-                    <td>{inr(bomCost(product, items))}</td>
+                    <td>{inr(bomCost(product, items, labours, machines))}</td>
                     <td>{inr(product.productPrice)}</td>
                     <td><span className={`rounded-full px-2 py-1 text-xs font-semibold ${product.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : product.status === 'On Hold' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'}`}>{product.status}</span></td>
                     <td className="px-4 py-3">
@@ -527,13 +584,14 @@ export default function BomPage() {
                     </div>
                   </div>
                   <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
-                    <table className={`${showThumbnails ? 'min-w-[1740px]' : 'min-w-[1660px]'} table-fixed text-left text-sm`}>
+                    <table className={`${showThumbnails ? 'min-w-[1780px]' : 'min-w-[1700px]'} table-fixed text-left text-sm`}>
                       <thead className="bg-slate-100 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         <tr>
                           <th className="w-10 px-3 py-2">#</th>
                           {showThumbnails && <th className="w-[84px]">Image</th>}
-                          <th className="w-[120px]">Type</th>
-                          <th className="w-[160px]">No.</th>
+                          <th className="w-[115px]">Type</th>
+                          <th className="w-[120px]">Resource</th>
+                          <th className="w-[155px]">No.</th>
                           <th className="w-[280px]">Description</th>
                           <th className="w-[100px]">Quantity</th>
                           <th className="w-[80px]">UoM</th>
@@ -550,10 +608,20 @@ export default function BomPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {stageLines.map(({ line, index }, rowIndex) => {
+                        {stageLines.map(({ line: rawLine, index }, rowIndex) => {
+                          const line = normalizeResourceLine(rawLine, labours, machines)
                           const isRouteStage = line.type === 'Route Stage'
-                          const item = isRouteStage ? null : findItem(items, line.itemId)
-                          const total = lineCost(line, items)
+                          const isResource = line.type === 'Resource'
+                          const item = isRouteStage || isResource ? null : findItem(items, line.itemId)
+                          const resource = isResource ? findResource(line, labours, machines) : null
+                          const resourceOptions = line.resourceType === 'Machine' ? machines : labours
+                          const total = lineCost(line, items, labours, machines)
+                          const unitCost = isResource ? resourceRate(line, labours, machines) : item?.price
+                          const description = isResource
+                            ? line.resourceType === 'Machine'
+                              ? `${resource?.name || ''}${resource?.workCenter ? ` / ${resource.workCenter}` : ''}`
+                              : `${resource?.name || ''}${resource?.designation ? ` / ${resource.designation}` : ''}`
+                            : item?.name
                           return (
                             <tr key={`${line.itemId}-${index}`} className={`border-t border-slate-100 dark:border-slate-800 dark:text-slate-200 ${isRouteStage ? 'bg-sky-50/70 dark:bg-sky-950/20' : ''}`}>
                               <td className="px-3 py-1 text-slate-500">{rowIndex + 1}</td>
@@ -565,10 +633,14 @@ export default function BomPage() {
                               <td className="pr-2">
                                 <select value={line.type} title="Change type. Route Stage makes this row a stage marker." onChange={(e) => {
                                   const nextType = e.target.value
-                                  const firstMatch = items.find((candidate) => nextType === 'Text' || candidate.category === nextType) || items[0]
+                                  const firstMatch = nextType === 'Resource' || nextType === 'Route Stage' ? null : items.find((candidate) => nextType === 'Text' || candidate.category === nextType) || items[0]
+                                  const defaultLabour = labours[0]
                                   updateLine(index, {
                                     type: nextType,
                                     itemId: nextType === 'Route Stage' ? '' : firstMatch?.id || line.itemId,
+                                    resourceType: nextType === 'Resource' ? line.resourceType || 'Labour' : undefined,
+                                    resourceCode: nextType === 'Resource' ? line.resourceCode || defaultLabour?.code || '' : undefined,
+                                    resourceUnit: nextType === 'Resource' ? line.resourceUnit || 'Hr' : undefined,
                                     quantity: nextType === 'Route Stage' ? 0 : line.quantity || 1,
                                     issueMethod: nextType === 'Resource' || nextType === 'Route Stage' ? 'Manual' : 'Backflush',
                                   })
@@ -580,19 +652,52 @@ export default function BomPage() {
                                 </select>
                               </td>
                               <td className="pr-2">
+                                {isResource ? (
+                                  <select
+                                    value={line.resourceType}
+                                    onChange={(e) => {
+                                      const nextResourceType = e.target.value
+                                      const nextList = nextResourceType === 'Machine' ? machines : labours
+                                      updateLine(index, {
+                                        resourceType: nextResourceType,
+                                        resourceCode: nextList[0]?.code || '',
+                                        resourceUnit: 'Hr',
+                                      })
+                                    }}
+                                    className="w-full rounded border border-slate-300 px-2 py-1 dark:border-slate-700 dark:bg-slate-800"
+                                  >
+                                    <option>Labour</option>
+                                    <option>Machine</option>
+                                  </select>
+                                ) : (
+                                  <span className="text-xs text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="pr-2">
                                 {isRouteStage ? (
                                   <span className="text-xs font-semibold text-sky-700 dark:text-sky-300">Stage Marker</span>
+                                ) : isResource ? (
+                                  <select value={line.resourceCode} onChange={(e) => updateLine(index, { resourceCode: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 dark:border-slate-700 dark:bg-slate-800">
+                                    {resourceOptions.map((candidate) => <option key={candidate.code} value={candidate.code}>{candidate.code}</option>)}
+                                  </select>
                                 ) : (
                                   <select value={line.itemId} onChange={(e) => updateLine(index, { itemId: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 dark:border-slate-700 dark:bg-slate-800">
                                     {items.filter((candidate) => line.type === 'Text' || candidate.category === line.type).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}
                                   </select>
                                 )}
                               </td>
-                              <td className="truncate pr-3" title={isRouteStage ? (line.comments || stage) : item?.name}>
-                                {isRouteStage ? <input value={line.comments || stage} onChange={(e) => updateLine(index, { comments: e.target.value })} className="w-full rounded border border-sky-200 px-2 py-1 font-semibold dark:border-sky-800 dark:bg-slate-800" /> : item?.name}
+                              <td className="truncate pr-3" title={isRouteStage ? (line.comments || stage) : description}>
+                                {isRouteStage ? <input value={line.comments || stage} onChange={(e) => updateLine(index, { comments: e.target.value })} className="w-full rounded border border-sky-200 px-2 py-1 font-semibold dark:border-sky-800 dark:bg-slate-800" /> : description}
                               </td>
                               <td className="pr-2"><input value={line.quantity} disabled={isRouteStage} onChange={(e) => updateLine(index, { quantity: Number(e.target.value || 0) })} type="number" min="0" step="0.01" className="w-full rounded border border-slate-300 px-2 py-1 text-right disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" /></td>
-                              <td>{isRouteStage ? '-' : item?.uom}</td>
+                              <td>
+                                {isResource ? (
+                                  <select value={line.resourceUnit} onChange={(e) => updateLine(index, { resourceUnit: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 dark:border-slate-700 dark:bg-slate-800">
+                                    <option>Hr</option>
+                                    <option>Min</option>
+                                  </select>
+                                ) : isRouteStage ? '-' : item?.uom}
+                              </td>
                               <td className="pr-2"><input value={line.warehouse} disabled={isRouteStage} onChange={(e) => updateLine(index, { warehouse: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" /></td>
                               <td className="pr-2">
                                 <select value={line.issueMethod} disabled={isRouteStage} onChange={(e) => updateLine(index, { issueMethod: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900">
@@ -600,7 +705,7 @@ export default function BomPage() {
                                   <option>Manual</option>
                                 </select>
                               </td>
-                              <td>{isRouteStage ? '-' : inr(item?.price)}</td>
+                              <td>{isRouteStage ? '-' : inr(unitCost)}</td>
                               <td>{inr(total)}</td>
                               <td className="pr-2">
                                 <select value={line.priceList} disabled={isRouteStage} onChange={(e) => updateLine(index, { priceList: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900">
@@ -609,9 +714,9 @@ export default function BomPage() {
                                   <option>Standard</option>
                                 </select>
                               </td>
-                              <td>{isRouteStage ? '-' : inr(item?.price)}</td>
+                              <td>{isRouteStage ? '-' : inr(unitCost)}</td>
                               <td className="font-semibold">{inr(total)}</td>
-                              <td>{isRouteStage ? '-' : item?.weight}</td>
+                              <td>{isResource ? (line.resourceType === 'Machine' ? `${resource?.efficiency || 0}%` : resource?.availability || '-') : isRouteStage ? '-' : item?.weight}</td>
                               <td className="pr-2"><input value={isRouteStage ? '' : line.comments} disabled={isRouteStage} onChange={(e) => updateLine(index, { comments: e.target.value })} className="w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" /></td>
                               <td><button onClick={() => setDraft((prev) => ({ ...prev, lines: (Array.isArray(prev.lines) ? prev.lines : []).filter((_, lineIndex) => lineIndex !== index) }))} className="rounded border p-1.5 text-rose-600 dark:border-slate-700"><Trash2 size={15} /></button></td>
                             </tr>
@@ -619,7 +724,7 @@ export default function BomPage() {
                         })}
                         {!stageLines.length && (
                           <tr className="border-t border-slate-100 dark:border-slate-800">
-                            <td colSpan={showThumbnails ? 18 : 17} className="px-3 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No lines in this stage yet. Use Stage Row, Add Item, or Add Resource.</td>
+                            <td colSpan={showThumbnails ? 19 : 18} className="px-3 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No lines in this stage yet. Use Stage Row, Add Item, or Add Resource.</td>
                           </tr>
                         )}
                       </tbody>

@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { Activity, Factory, Gauge, Plus, Search, Users, Wrench } from 'lucide-react'
 import { StatusBadge } from '../../components/badges/status-badge'
 
+const labourKey = 'aasa_labour_resources'
+const machineKey = 'aasa_machine_resources'
+
+const readStored = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : fallback
+  } catch {
+    return fallback
+  }
+}
+
 const initialLabours = [
   {
     code: 'LAB-001',
@@ -980,8 +992,8 @@ function ResourceDetailModal({ open, mode, resourceType, record, onClose, onMode
 export default function MachinesPage() {
   const [activeView, setActiveView] = useState('Labour')
   const [query, setQuery] = useState('')
-  const [labours, setLabours] = useState(initialLabours)
-  const [machines, setMachines] = useState(initialMachines)
+  const [labours, setLabours] = useState(() => readStored(labourKey, initialLabours))
+  const [machines, setMachines] = useState(() => readStored(machineKey, initialMachines))
   const [createLabourOpen, setCreateLabourOpen] = useState(false)
   const [createMachineOpen, setCreateMachineOpen] = useState(false)
   const [createMaintenanceOpen, setCreateMaintenanceOpen] = useState(false)
@@ -992,6 +1004,9 @@ export default function MachinesPage() {
   const [editingMachine, setEditingMachine] = useState(null)
   const [selectedResource, setSelectedResource] = useState(null)
   const [resourceModalMode, setResourceModalMode] = useState('view')
+
+  useEffect(() => { localStorage.setItem(labourKey, JSON.stringify(labours)) }, [labours])
+  useEffect(() => { localStorage.setItem(machineKey, JSON.stringify(machines)) }, [machines])
 
   const filteredLabours = useMemo(
     () => labours.filter((item) => JSON.stringify(item).toLowerCase().includes(query.toLowerCase())),
