@@ -13,6 +13,7 @@ export const sidebarConfig = {
     { label: 'Machine / Work Center', path: '/masters/machines', icon: Factory },
     { label: 'BOM / Recipe', path: '/production/bom', icon: Boxes },
     { label: 'BOM Approvals', path: '/production/bom-approvals', icon: ClipboardCheck },
+    { label: 'Production Planning', path: '/production/planning', icon: Factory },
     { label: 'Finished Goods Inventory', path: '/inventory/finished-goods', icon: Package },
     { label: 'Waste Management', path: '/qc/wastage', icon: AlertCircle },
     { label: 'System Settings', path: '/masters/settings', icon: Settings },

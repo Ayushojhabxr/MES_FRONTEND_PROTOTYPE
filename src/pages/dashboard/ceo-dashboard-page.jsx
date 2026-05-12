@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import {
   Activity,
+  CalendarDays,
   ClipboardList,
+  Clock3,
   Factory,
   IndianRupee,
   PackageCheck,
@@ -15,6 +17,57 @@ import { KpiCards } from '../../components/cards/kpi-cards'
 import { StatusBadge } from '../../components/badges/status-badge'
 
 const money = (value) => `INR ${value.toLocaleString('en-IN')}`
+const planningKey = 'aasa_production_plans'
+
+const planRates = {
+  'AERO-200-NOVA': 18,
+  'AERO-300-FRESH': 24,
+  'AERO-500-IND': 36,
+  'AERO-200-LUXE': 32,
+  'AERO-300-ELYS': 42,
+}
+
+const demoProductionPlans = [
+  { id: 'PLAN-260512-001', date: '2026-05-12', shift: 'Morning', shiftTime: '09:00-18:00', customer: 'LuxeAura Perfumes', salesOrder: 'SO-LUXE-1142', batchNo: 'BATCH-LUXE-260512-M1', productCode: 'AERO-200-LUXE', productName: '200 ml Perfume Can - LuxeAura Brand', bom: 'BOM-AERO-200-LUXE', plannedQty: 24000, actualQty: 11200, facility: 'Plant 1 / Filling Line 1', status: 'In Progress', currentStage: 'Filling', stages: ['Can Prep', 'Filling', 'Valve Crimping', 'Leak Test', 'Customer Labelling', 'Packing', 'QC Release'].map((name) => ({ name, status: name === 'Can Prep' ? 'Completed' : name === 'Filling' ? 'Running' : 'Pending' })) },
+  { id: 'PLAN-260512-002', date: '2026-05-12', shift: 'General', shiftTime: '10:00-19:00', customer: 'FreshMist Hygiene Pvt Ltd', salesOrder: 'SO-FRESH-778', batchNo: 'BATCH-FRESH-260512-G1', productCode: 'AERO-300-FRESH', productName: '300 ml Aerosol Can - FreshMist Label', bom: 'BOM-AERO-300-FRESH', plannedQty: 18000, actualQty: 14300, facility: 'Plant 1 / Labelling Line', status: 'In Progress', currentStage: 'Customer Labelling', stages: ['Can Prep', 'Filling', 'Valve Crimping', 'Leak Test', 'Customer Labelling', 'Packing', 'QC Release'].map((name, index) => ({ name, status: index < 4 ? 'Completed' : name === 'Customer Labelling' ? 'Running' : 'Pending' })) },
+  { id: 'PLAN-260512-003', date: '2026-05-12', shift: 'Night', shiftTime: '21:00-06:00', customer: 'AeroChem Solutions', salesOrder: 'SO-AERO-221', batchNo: 'BATCH-AERO-260512-N1', productCode: 'AERO-500-IND', productName: '500 ml Aerosol Can - IndustrialPro Label', bom: 'BOM-AERO-500-IND', plannedQty: 9600, actualQty: 0, facility: 'Plant 2 / Heavy Fill Line', status: 'Scheduled', currentStage: 'Can Prep', stages: ['Can Prep', 'Filling', 'Valve Crimping', 'Leak Test', 'Customer Labelling', 'Packing', 'QC Release'].map((name) => ({ name, status: name === 'Can Prep' ? 'Running' : 'Pending' })) },
+  { id: 'PLAN-260514-001', date: '2026-05-14', shift: 'Morning', shiftTime: '09:00-18:00', customer: 'PrimeShield Consumer Products', salesOrder: 'SO-PRIME-620', batchNo: 'BATCH-PRIME-260514-M1', productCode: 'AERO-300-FRESH', productName: '300 ml Aerosol Can - FreshMist Label', bom: 'BOM-AERO-300-FRESH', plannedQty: 22000, actualQty: 0, facility: 'Plant 1 / Filling Line 2', status: 'Approved', currentStage: 'Can Prep', stages: ['Can Prep', 'Filling', 'Valve Crimping', 'Leak Test', 'Customer Labelling', 'Packing', 'QC Release'].map((name) => ({ name, status: 'Pending' })) },
+  { id: 'PLAN-260515-001', date: '2026-05-15', shift: 'General', shiftTime: '10:00-19:00', customer: 'LuxeAura Perfumes', salesOrder: 'SO-LUXE-1175', batchNo: 'BATCH-LUXE-260515-G1', productCode: 'AERO-200-LUXE', productName: '200 ml Perfume Can - LuxeAura Brand', bom: 'BOM-AERO-200-LUXE', plannedQty: 28000, actualQty: 0, facility: 'Plant 1 / Labelling Line', status: 'Pending Approval', currentStage: 'Can Prep', stages: ['Can Prep', 'Filling', 'Valve Crimping', 'Leak Test', 'Customer Labelling', 'Packing', 'QC Release'].map((name) => ({ name, status: 'Pending' })) },
+]
+
+const readProductionPlans = () => {
+  try {
+    const raw = localStorage.getItem(planningKey)
+    const stored = raw ? JSON.parse(raw) : []
+    return Array.from(new Map([...demoProductionPlans, ...(Array.isArray(stored) ? stored : [])].map((plan) => [plan.id, plan])).values())
+  } catch {
+    return demoProductionPlans
+  }
+}
+
+const toDate = (value) => {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+const addDays = (date, days) => {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+const startOfWeek = (date) => addDays(date, -((date.getDay() + 6) % 7))
+const periodRange = (mode, selectedDate) => {
+  const date = toDate(selectedDate)
+  if (mode === 'Today') return { start: date, end: date, label: date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) }
+  if (mode === '7 Days') return { start: date, end: addDays(date, 6), label: `${date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} - ${addDays(date, 6).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` }
+  const start = startOfWeek(date)
+  return { start, end: addDays(start, 6), label: `${start.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} - ${addDays(start, 6).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` }
+}
+const inRange = (dateText, range) => {
+  const date = toDate(dateText)
+  return date >= range.start && date <= range.end
+}
+const planValue = (plan) => Number(plan.plannedQty || 0) * Number(planRates[plan.productCode] || 25)
+const planProgress = (plan) => Math.min(100, Math.round((Number(plan.actualQty || 0) / Math.max(Number(plan.plannedQty || 1), 1)) * 100))
 
 const products = [
   {
@@ -171,6 +224,83 @@ function ProductDetail({ product }) {
   )
 }
 
+function CeoProductionPlanView() {
+  const [mode, setMode] = useState('Today')
+  const [selectedDate, setSelectedDate] = useState('2026-05-12')
+  const plans = useMemo(readProductionPlans, [])
+  const range = periodRange(mode, selectedDate)
+  const visible = plans.filter((plan) => inRange(plan.date, range))
+  const totalQty = visible.reduce((sum, plan) => sum + Number(plan.plannedQty || 0), 0)
+  const totalValue = visible.reduce((sum, plan) => sum + planValue(plan), 0)
+  const running = visible.filter((plan) => plan.status === 'In Progress').length
+
+  return (
+    <Panel title="Production planning control view" icon={CalendarDays} className="xl:col-span-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
+        <div>
+          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">CEO production period</p>
+          <p className="text-lg font-semibold text-slate-950 dark:text-slate-100">{mode}: {range.label}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{visible.length} plan(s), {totalQty.toLocaleString('en-IN')} cans, {money(totalValue)} planned value</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {['Today', '7 Days', 'This Week'].map((item) => (
+            <button key={item} onClick={() => setMode(item)} className={`rounded-md px-3 py-2 text-sm font-semibold ${mode === item ? 'bg-slate-950 text-white dark:bg-sky-600' : 'border border-slate-300 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'}`}>{item}</button>
+          ))}
+          <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="h-10 rounded-md border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+        </div>
+      </div>
+
+      <div className="mb-3 grid gap-3 md:grid-cols-4">
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><p className="text-xs text-slate-500">Plans</p><p className="text-xl font-semibold">{visible.length}</p></div>
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><p className="text-xs text-slate-500">Running</p><p className="text-xl font-semibold">{running}</p></div>
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><p className="text-xs text-slate-500">Planned Qty</p><p className="text-xl font-semibold">{totalQty.toLocaleString('en-IN')}</p></div>
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><p className="text-xs text-slate-500">Planned Value</p><p className="text-xl font-semibold">{money(totalValue)}</p></div>
+      </div>
+
+      {!visible.length ? (
+        <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">No production planning exists for this period.</div>
+      ) : (
+        <div className="grid gap-3 xl:grid-cols-2">
+          {visible.map((plan) => (
+            <div key={plan.id} className="rounded-lg border border-slate-200 p-3 shadow-sm dark:border-slate-700">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-slate-950 dark:text-slate-100">{plan.productCode}</p>
+                    <StatusBadge status={plan.status} />
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">{plan.customer} / {plan.salesOrder}</p>
+                  <p className="text-xs text-slate-500">{plan.batchNo} / {plan.facility}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold">{money(planValue(plan))}</p>
+                  <p className="text-xs text-slate-500">{plan.shift} {plan.shiftTime}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2 md:grid-cols-[1fr_8rem]">
+                <div className="min-w-0 overflow-x-auto">
+                  <div className="flex min-w-[520px] gap-1">
+                    {(plan.stages || []).map((stage) => {
+                      const color = stage.status === 'Completed' ? 'bg-emerald-500 text-white' : stage.status === 'Running' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                      return <div key={stage.name} className={`flex-1 rounded px-2 py-1 text-center text-[11px] font-semibold ${color}`}>{stage.name}</div>
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs"><span>Progress</span><strong>{planProgress(plan)}%</strong></div>
+                  <div className="mt-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-2 rounded-full bg-emerald-500" style={{ width: `${planProgress(plan)}%` }} /></div>
+                  <p className="mt-1 text-xs text-slate-500">{Number(plan.actualQty || 0).toLocaleString('en-IN')} / {Number(plan.plannedQty || 0).toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
 export function CeoDashboardPage() {
   const [selectedCode, setSelectedCode] = useState(products[0].code)
   const selected = products.find((item) => item.code === selectedCode) || products[0]
@@ -200,6 +330,8 @@ export function CeoDashboardPage() {
       <KpiCards items={kpis} />
 
       <div className="grid gap-4 xl:grid-cols-3">
+        <CeoProductionPlanView />
+
         <Panel title="Production products" icon={Factory} className="xl:col-span-2">
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
